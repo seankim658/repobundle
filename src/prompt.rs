@@ -3,14 +3,18 @@ use std::io::{BufRead, Write};
 use anyhow::{Context, Result};
 
 /// Ask a yes-or-no question and return whether the answer was yes. Anything but `y` or `yes`,
-/// including no answer at all, means no.
+/// including no answer at all, means no. End the line when input closes without an answer, so
+/// the next message starts on its own line.
 pub fn confirm(question: &str, mut input: impl BufRead, mut output: impl Write) -> Result<bool> {
     write!(output, "{question} [y/N] ").context("failed to write the prompt")?;
     output.flush().context("failed to write the prompt")?;
     let mut answer = String::new();
-    input
+    let bytes_read = input
         .read_line(&mut answer)
         .context("failed to read the answer")?;
+    if bytes_read == 0 {
+        writeln!(output).context("failed to write the prompt")?;
+    }
     Ok(is_yes(&answer))
 }
 
@@ -46,5 +50,14 @@ mod tests {
         let mut output = Vec::new();
         confirm("Delete?", Cursor::new("n\n"), &mut output).unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "Delete? [y/N] ");
+    }
+
+    #[test]
+    fn closed_input_ends_the_prompt_line() {
+        let mut output = Vec::new();
+        let approved = confirm("Delete?", Cursor::new(""), &mut output).unwrap();
+
+        assert!(!approved);
+        assert_eq!(String::from_utf8(output).unwrap(), "Delete? [y/N] \n");
     }
 }
