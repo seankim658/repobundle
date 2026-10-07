@@ -31,59 +31,76 @@ struct ColorEnv {
     clicolor: Option<String>,
 }
 
+/// The bracketed marker that starts each message and says what kind it is.
+#[derive(Debug, Clone, Copy)]
+enum Badge {
+    Success,
+    Info,
+    Warning,
+    Error,
+}
+
 pub fn created(path: &Path, size: u64) {
-    let label = label("Created", Color::Green, Stream::Stdout);
-    println!("{label} {} ({})", path.display(), format_size(size));
+    let badge = badge(Badge::Success);
+    println!("{badge} Created {} ({})", path.display(), format_size(size));
 }
 
 pub fn up_to_date(path: &Path) {
-    let label = label("Up to date:", Color::Green, Stream::Stdout);
-    println!("{label} {}", path.display());
+    println!("{} Up to date: {}", badge(Badge::Success), path.display());
 }
 
 pub fn would_create(path: &Path) {
-    let label = label("Would create", Color::Cyan, Stream::Stdout);
-    println!("{label} {}", path.display());
+    println!("{} Would create {}", badge(Badge::Info), path.display());
 }
 
 /// Print to stderr, so warnings never mix into the output a script reads.
 pub fn warnings(warnings: &[Warning]) {
-    let label = label("warning:", Color::Yellow, Stream::Stderr);
+    let badge = badge(Badge::Warning);
     for warning in warnings {
-        eprintln!("{label} {warning}");
+        eprintln!("{badge} {}", capitalize(&warning.to_string()));
     }
 }
 
 pub fn nothing_to_prune() {
-    println!("Nothing to prune");
+    println!("{} Nothing to prune", badge(Badge::Info));
 }
 
 pub fn would_delete(bundles: &[BundleFile]) {
-    let label = label("Would delete", Color::Cyan, Stream::Stdout);
+    let badge = badge(Badge::Info);
     for bundle in bundles {
-        println!("{label} {}", bundle.path.display());
+        println!("{badge} Would delete {}", bundle.path.display());
     }
 }
 
 /// List the bundles a confirmation prompt is about to ask about. Use stderr, like the prompt.
 pub fn deletion_candidates(bundles: &[BundleFile]) {
     for bundle in bundles {
-        eprintln!("  {}", bundle.path.display());
+        eprintln!("  - {}", bundle.path.display());
     }
 }
 
+/// Style a confirmation question in bold when stderr, where the prompt goes, gets color.
+pub fn question(text: &str) -> String {
+    if !stream_colors().allows(Stream::Stderr) {
+        return text.to_string();
+    }
+    text.bold().to_string()
+}
+
 pub fn nothing_deleted() {
-    println!("Nothing deleted");
+    println!("{} Nothing deleted", badge(Badge::Info));
 }
 
 pub fn deleted(path: &Path) {
-    let label = label("Deleted", Color::Yellow, Stream::Stdout);
-    println!("{label} {}", path.display());
+    println!("{} Deleted {}", badge(Badge::Success), path.display());
 }
 
 pub fn error(error: &anyhow::Error) {
-    let label = label("error:", Color::Red, Stream::Stderr);
-    eprintln!("{label} {error:#}");
+    eprintln!(
+        "{} {}",
+        badge(Badge::Error),
+        capitalize(&format!("{error:#}"))
+    );
 }
 
 pub fn count_bundles(count: usize) -> String {
@@ -93,12 +110,54 @@ pub fn count_bundles(count: usize) -> String {
     format!("{count} bundles")
 }
 
-/// Style `text` as a bold label when `stream` gets color, and leave it plain otherwise.
-fn label(text: &str, color: Color, stream: Stream) -> String {
-    if !stream_colors().allows(stream) {
-        return text.to_string();
+fn badge(kind: Badge) -> String {
+    render_badge(kind, stream_colors().allows(kind.stream()))
+}
+
+/// Color only the symbol, and bold the brackets around it, when `colored` is set.
+fn render_badge(kind: Badge, colored: bool) -> String {
+    let symbol = kind.symbol();
+    if !colored {
+        return format!("[{symbol}]");
     }
-    text.color(color).bold().to_string()
+    let symbol = symbol.color(kind.color()).bold();
+    format!("{}{symbol}{}", "[".bold(), "]".bold())
+}
+
+/// Uppercase the first letter, since each message reads as a sentence after its badge.
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+impl Badge {
+    fn symbol(self) -> &'static str {
+        match self {
+            Self::Success => "✓",
+            Self::Info => "i",
+            Self::Warning | Self::Error => "!",
+        }
+    }
+
+    fn color(self) -> Color {
+        match self {
+            Self::Success => Color::Green,
+            Self::Info => Color::Blue,
+            Self::Warning => Color::Yellow,
+            Self::Error => Color::Red,
+        }
+    }
+
+    /// Send warnings and errors to stderr, and everything else to stdout.
+    fn stream(self) -> Stream {
+        match self {
+            Self::Success | Self::Info => Stream::Stdout,
+            Self::Warning | Self::Error => Stream::Stderr,
+        }
+    }
 }
 
 /// Decide once per run which streams get color. Override `colored`'s own check, which looks
@@ -219,6 +278,23 @@ mod tests {
             ..ColorEnv::default()
         };
         assert!(!env.wants_color(false));
+    }
+
+    // Badges
+
+    #[test]
+    fn plain_badges_keep_their_brackets() {
+        assert_eq!(render_badge(Badge::Success, false), "[✓]");
+        assert_eq!(render_badge(Badge::Info, false), "[i]");
+        assert_eq!(render_badge(Badge::Warning, false), "[!]");
+        assert_eq!(render_badge(Badge::Error, false), "[!]");
+    }
+
+    #[test]
+    fn capitalizes_only_the_first_letter() {
+        assert_eq!(capitalize("failed to read `x`"), "Failed to read `x`");
+        assert_eq!(capitalize("`--name` is invalid"), "`--name` is invalid");
+        assert_eq!(capitalize(""), "");
     }
 
     // Counts

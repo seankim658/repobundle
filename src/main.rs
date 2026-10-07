@@ -170,7 +170,7 @@ fn deletion_approved(settings: &Settings, excess: &[BundleFile]) -> Result<bool>
     }
     output::deletion_candidates(excess);
     prompt::confirm(
-        &format!("Delete {count}?"),
+        &output::question(&format!("Delete {count}?")),
         io::stdin().lock(),
         io::stderr(),
     )

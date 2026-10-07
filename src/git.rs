@@ -108,7 +108,9 @@ impl Git {
     pub fn discover(path: &Path) -> Result<Self> {
         let root = Self::new(path)
             .run(["rev-parse", "--show-toplevel"])
-            .with_context(|| format!("{} is not inside a git repository", path.display()))?;
+            .with_context(|| {
+                format!("the path {} is not inside a git repository", path.display())
+            })?;
         Ok(Self::new(root))
     }
 

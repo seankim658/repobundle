@@ -46,7 +46,7 @@ impl fmt::Display for Warning {
             ),
             Self::UnignoredOutput(path) => write!(
                 formatter,
-                "{} is inside the repo but not ignored, so git lists it as untracked; add it to .gitignore or .git/info/exclude",
+                "the output {} is inside the repo but not ignored, so git lists it as untracked; add it to .gitignore or .git/info/exclude",
                 path.display()
             ),
         }

@@ -28,7 +28,7 @@ fn uncommitted_file_is_reported_and_bundle_is_still_created() {
     fixture.write_file("notes.txt", "draft");
     let stderr = fixture.succeed_with_stderr(&[]);
 
-    assert!(stderr.contains("uncommitted changes"), "{stderr}");
+    assert!(stderr.contains("Uncommitted changes"), "{stderr}");
     assert!(stderr.contains("notes.txt"), "{stderr}");
     assert_eq!(fixture.default_bundles().len(), 1);
 }
@@ -58,7 +58,7 @@ fn unignored_output_is_reported_but_not_as_a_change() {
     let stderr = fixture.succeed_with_stderr(&[]);
 
     assert!(stderr.contains("not ignored"), "{stderr}");
-    assert!(!stderr.contains("uncommitted"), "{stderr}");
+    assert!(!stderr.contains("Uncommitted"), "{stderr}");
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn submodules_are_reported() {
     fixture.write_file(".gitmodules", "");
     let stderr = fixture.succeed_with_stderr(&[]);
 
-    assert!(stderr.contains("submodule contents"), "{stderr}");
+    assert!(stderr.contains("Submodule contents"), "{stderr}");
 }
 
 #[test]
