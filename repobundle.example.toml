@@ -1,0 +1,27 @@
+# Copy this file to ~/.repobundle.toml for global defaults, or to .repobundle.toml in a
+# repository for that project. Project values override global ones, and command-line flags
+# override both. Every key is optional.
+
+[defaults]
+# A path ending in `.bundle` names one file, which each new bundle replaces. Anything else is
+# a directory. Relative paths resolve against the repo root, and a leading `~` expands to the
+# home directory.
+output = "bundles"
+
+# Filename template for directory output. It must contain `{repo}` and end in `.bundle`.
+# See docs/config_file.md for the placeholders.
+name = "{timestamp}-{hash}-{repo}.bundle"
+
+# Which refs to bundle. One of "all", "branches", or "head".
+refs = "all"
+
+# After creating a bundle, keep only the newest N bundles of this repo. Omit to never prune.
+# This has no effect when `output` names a single file.
+prune = 3
+
+# Warn when a bundle is larger than this many megabytes. Omit to never warn.
+max_size_mb = 30
+
+# Use this name for `{repo}` instead of the repo directory's name. Set it only in a project
+# file, since a global value would give every repo the same name.
+# repo_name = "myrepo"
