@@ -2,3 +2,4 @@
 .codeprompt.toml
 other/
 /bundles/
+.repobundle.toml
