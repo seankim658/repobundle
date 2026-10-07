@@ -137,12 +137,17 @@ fn unchanged_bundle(git: &Git, settings: &Settings, refs: &RefSet) -> Result<Opt
 
 fn prune_only(settings: &Settings, dir: &BundleDir, keep: NonZeroUsize) -> Result<()> {
     let found = dir.find(&settings.repo_name)?;
-    remove_excess(settings, &prune::select(found, keep, None))
-}
-
-fn remove_excess(settings: &Settings, excess: &[BundleFile]) -> Result<()> {
+    let excess = prune::select(found, keep, None);
     if excess.is_empty() {
         output::nothing_to_prune();
+        return Ok(());
+    }
+    remove_excess(settings, &excess)
+}
+
+/// Stay silent when nothing is over the limit, so a routine create prints only its result.
+fn remove_excess(settings: &Settings, excess: &[BundleFile]) -> Result<()> {
+    if excess.is_empty() {
         return Ok(());
     }
     if settings.dry_run {

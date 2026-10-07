@@ -114,7 +114,7 @@ Only `y` or `yes`, in any case, deletes. Anything else, including just pressing 
 
 Declining isn't an error. The run still exits successfully, and a bundle it created is kept.
 
-When there's nothing over the limit, there's nothing to ask.
+When there's nothing over the limit, there's nothing to ask. `--prune-only` reports it, and a run that creates a bundle prints only its result line.
 
 ```
 [i] Nothing to prune

@@ -78,6 +78,15 @@ fn prune_with_nothing_to_delete_needs_no_confirmation() {
 }
 
 #[test]
+fn prune_after_create_with_nothing_to_delete_stays_quiet() {
+    let fixture = Fixture::with_commit();
+    let stdout = fixture.succeed(&["--prune=5"]);
+
+    assert!(stdout.contains("Created"), "{stdout}");
+    assert!(!stdout.contains("Nothing to prune"), "{stdout}");
+}
+
+#[test]
 fn prune_only_with_force_keeps_only_the_newest() {
     let fixture = Fixture::with_commit();
     let names = create_bundles(&fixture, 3);
