@@ -19,7 +19,7 @@ fn plain_messages_start_with_a_badge() {
     let stdout = fixture.succeed(&[]);
     let stderr = fixture.succeed_with_stderr(&["--force"]);
 
-    assert!(stdout.starts_with("[✓] Created "), "{stdout:?}");
+    assert!(stdout.starts_with("[✓] Created bundles/"), "{stdout:?}");
     assert!(stderr.starts_with("[!] Uncommitted changes"), "{stderr:?}");
 }
 

@@ -26,12 +26,12 @@ repobundle --prune=2
 ```
 
 ```
-[✓] Created /home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle (149.0 kB)
-  - /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
-  - /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
+[✓] Created bundles/20261007T150211Z-c71d9e4-myrepo.bundle (149.0 kB)
+  - bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
+  - bundles/20261005T174802Z-9d3f210-myrepo.bundle
 Delete 2 bundles? [y/N] y
-[✓] Deleted /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
-[✓] Deleted /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
+[✓] Deleted bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
+[✓] Deleted bundles/20261005T174802Z-9d3f210-myrepo.bundle
 ```
 
 Here the directory held three older bundles. The new one and the newest older one (`20261007T133512Z-3f9a2c1`, not listed) are kept, and the other two are deleted.
@@ -101,8 +101,8 @@ If you change the name template, bundles made under the old template stop matchi
 Deleting asks first. repobundle lists the bundles it would delete on stderr, then waits for an answer.
 
 ```
-  - /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
-  - /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
+  - bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
+  - bundles/20261005T174802Z-9d3f210-myrepo.bundle
 Delete 2 bundles? [y/N]
 ```
 
@@ -131,9 +131,9 @@ repobundle --prune=2 --dry-run
 ```
 
 ```
-[i] Would create /home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle
-[i] Would delete /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
-[i] Would delete /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
+[i] Would create bundles/20261007T150211Z-c71d9e4-myrepo.bundle
+[i] Would delete bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
+[i] Would delete bundles/20261005T174802Z-9d3f210-myrepo.bundle
 ```
 
 The bundle the run would create counts toward the limit even though it isn't written, so the preview matches what a real run would delete.

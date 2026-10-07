@@ -50,7 +50,7 @@ repobundle
 ```
 
 ```
-[✓] Created /home/me/code/myrepo/bundles/20261007T133512Z-3f9a2c1-myrepo.bundle (148.2 kB)
+[✓] Created bundles/20261007T133512Z-3f9a2c1-myrepo.bundle (148.2 kB)
 [!] The output bundles is inside the repo but not ignored, so git lists it as untracked; add it to .gitignore or .git/info/exclude
 ```
 
@@ -63,7 +63,7 @@ echo "/bundles/" >> .git/info/exclude
 Running it again before you commit anything reuses the bundle you already have.
 
 ```
-[✓] Up to date: /home/me/code/myrepo/bundles/20261007T133512Z-3f9a2c1-myrepo.bundle
+[✓] Up to date: bundles/20261007T133512Z-3f9a2c1-myrepo.bundle
 ```
 
 To get the repo back out of a bundle, clone it like any other remote.

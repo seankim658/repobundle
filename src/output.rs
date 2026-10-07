@@ -1,6 +1,6 @@
 use std::env;
 use std::io::{self, IsTerminal};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use colored::{Color, Colorize};
@@ -10,6 +10,7 @@ use crate::size::format_size;
 use crate::warnings::Warning;
 
 static STREAM_COLORS: OnceLock<StreamColors> = OnceLock::new();
+static PATH_BASES: OnceLock<PathBases> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 enum Stream {
@@ -31,6 +32,14 @@ struct ColorEnv {
     clicolor: Option<String>,
 }
 
+/// The directories that printed paths are shortened against. Either can be missing, and then
+/// paths just print in full.
+#[derive(Debug, Default)]
+struct PathBases {
+    cwd: Option<PathBuf>,
+    home: Option<PathBuf>,
+}
+
 /// The bracketed marker that starts each message and says what kind it is.
 #[derive(Debug, Clone, Copy)]
 enum Badge {
@@ -42,15 +51,15 @@ enum Badge {
 
 pub fn created(path: &Path, size: u64) {
     let badge = badge(Badge::Success);
-    println!("{badge} Created {} ({})", path.display(), format_size(size));
+    println!("{badge} Created {} ({})", shown(path), format_size(size));
 }
 
 pub fn up_to_date(path: &Path) {
-    println!("{} Up to date: {}", badge(Badge::Success), path.display());
+    println!("{} Up to date: {}", badge(Badge::Success), shown(path));
 }
 
 pub fn would_create(path: &Path) {
-    println!("{} Would create {}", badge(Badge::Info), path.display());
+    println!("{} Would create {}", badge(Badge::Info), shown(path));
 }
 
 /// Print to stderr, so warnings never mix into the output a script reads.
@@ -68,14 +77,14 @@ pub fn nothing_to_prune() {
 pub fn would_delete(bundles: &[BundleFile]) {
     let badge = badge(Badge::Info);
     for bundle in bundles {
-        println!("{badge} Would delete {}", bundle.path.display());
+        println!("{badge} Would delete {}", shown(&bundle.path));
     }
 }
 
 /// List the bundles a confirmation prompt is about to ask about. Use stderr, like the prompt.
 pub fn deletion_candidates(bundles: &[BundleFile]) {
     for bundle in bundles {
-        eprintln!("  - {}", bundle.path.display());
+        eprintln!("  - {}", shown(&bundle.path));
     }
 }
 
@@ -92,7 +101,7 @@ pub fn nothing_deleted() {
 }
 
 pub fn deleted(path: &Path) {
-    println!("{} Deleted {}", badge(Badge::Success), path.display());
+    println!("{} Deleted {}", badge(Badge::Success), shown(path));
 }
 
 pub fn error(error: &anyhow::Error) {
@@ -108,6 +117,12 @@ pub fn count_bundles(count: usize) -> String {
         return "1 bundle".to_string();
     }
     format!("{count} bundles")
+}
+
+fn shown(path: &Path) -> String {
+    PATH_BASES
+        .get_or_init(PathBases::from_process)
+        .shorten(path)
 }
 
 fn badge(kind: Badge) -> String {
@@ -131,6 +146,36 @@ fn capitalize(text: &str) -> String {
         Some(first) => first.to_uppercase().chain(chars).collect(),
         None => String::new(),
     }
+}
+
+impl PathBases {
+    fn from_process() -> Self {
+        Self {
+            cwd: env::current_dir().ok(),
+            home: dirs::home_dir(),
+        }
+    }
+
+    /// Show `path` relative to the working directory when it's inside it, under `~` when it's
+    /// inside the home directory, and in full otherwise. Every form still works in the same shell.
+    fn shorten(&self, path: &Path) -> String {
+        if let Some(relative) = strict_suffix(path, self.cwd.as_deref()) {
+            return relative.display().to_string();
+        }
+        if let Some(relative) = strict_suffix(path, self.home.as_deref()) {
+            return Path::new("~").join(relative).display().to_string();
+        }
+        path.display().to_string()
+    }
+}
+
+/// Return what follows `base` in `path`, when `path` is strictly inside `base`.
+fn strict_suffix<'a>(path: &'a Path, base: Option<&Path>) -> Option<&'a Path> {
+    let relative = path.strip_prefix(base?).ok()?;
+    if relative.as_os_str().is_empty() {
+        return None;
+    }
+    Some(relative)
 }
 
 impl Badge {
@@ -295,6 +340,40 @@ mod tests {
         assert_eq!(capitalize("failed to read `x`"), "Failed to read `x`");
         assert_eq!(capitalize("`--name` is invalid"), "`--name` is invalid");
         assert_eq!(capitalize(""), "");
+    }
+
+    // Paths
+
+    fn bases() -> PathBases {
+        PathBases {
+            cwd: Some(PathBuf::from("/home/me/code/myrepo")),
+            home: Some(PathBuf::from("/home/me")),
+        }
+    }
+
+    #[test]
+    fn path_inside_working_directory_is_relative() {
+        let path = Path::new("/home/me/code/myrepo/bundles/a.bundle");
+        assert_eq!(bases().shorten(path), "bundles/a.bundle");
+    }
+
+    #[test]
+    fn path_elsewhere_in_home_starts_with_tilde() {
+        let path = Path::new("/home/me/bundles/a.bundle");
+        assert_eq!(bases().shorten(path), "~/bundles/a.bundle");
+    }
+
+    #[test]
+    fn path_outside_home_prints_in_full() {
+        let path = Path::new("/mnt/bundles/a.bundle");
+        assert_eq!(bases().shorten(path), "/mnt/bundles/a.bundle");
+        assert_eq!(PathBases::default().shorten(path), "/mnt/bundles/a.bundle");
+    }
+
+    #[test]
+    fn working_directory_itself_is_never_empty() {
+        let path = Path::new("/home/me/code/myrepo");
+        assert_eq!(bases().shorten(path), "~/code/myrepo");
     }
 
     // Counts

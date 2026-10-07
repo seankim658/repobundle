@@ -2,7 +2,7 @@
 
 **Note.** This guide assumes the binary is on your `PATH` as `repobundle`. See [Setup](./setup.md) if it isn't.
 
-This guide walks through creating bundles, reading what repobundle prints, and getting a repo back out of a bundle. The examples use a repo at `/home/me/code/myrepo`.
+This guide walks through creating bundles, reading what repobundle prints, and getting a repo back out of a bundle. The examples use a repo at `/home/me/code/myrepo` and run from its root.
 
 - [Creating a Bundle](#creating-a-bundle)
   - [Bundle Names](#bundle-names)
@@ -28,7 +28,7 @@ repobundle
 ```
 
 ```
-[✓] Created /home/me/code/myrepo/bundles/20261007T133512Z-3f9a2c1-myrepo.bundle (148.2 kB)
+[✓] Created bundles/20261007T133512Z-3f9a2c1-myrepo.bundle (148.2 kB)
 ```
 
 That one command
@@ -38,6 +38,8 @@ That one command
 3. creates the bundle with `git bundle create`
 4. checks it with `git bundle verify`
 5. moves it into place and prints its path and size
+
+Paths are printed relative to the directory you run repobundle from. A bundle outside that directory but inside your home directory prints as `~/…`, and anything else prints in full. Error messages always use the full path.
 
 The bundle is built under a temporary name first and only renamed once it verifies. A failed run never leaves a half-written bundle behind or replaces a good one.
 
@@ -67,7 +69,7 @@ repobundle --name "{date}-{branch}@{repo}.bundle"
 ```
 
 ```
-[✓] Created /home/me/code/myrepo/bundles/20261007-main@myrepo.bundle (148.2 kB)
+[✓] Created bundles/20261007-main@myrepo.bundle (148.2 kB)
 ```
 
 The config file guide lists every placeholder and the rules a template has to follow.
@@ -77,7 +79,7 @@ The config file guide lists every placeholder and the rules a template has to fo
 Before creating a bundle, repobundle compares the refs in your newest existing bundle with the refs in the repo. If every branch, tag, and `HEAD` still points where it did, there's nothing new to bundle, so it reports the bundle you already have.
 
 ```
-[✓] Up to date: /home/me/code/myrepo/bundles/20261007T133512Z-3f9a2c1-myrepo.bundle
+[✓] Up to date: bundles/20261007T133512Z-3f9a2c1-myrepo.bundle
 ```
 
 This only looks at commits. Uncommitted changes aren't part of a bundle, so they don't make it out of date (you'll get a [warning](#warnings) about them instead).
@@ -130,7 +132,7 @@ repobundle -o snapshot.bundle
 ```
 
 ```
-[✓] Created /home/me/code/myrepo/snapshot.bundle (148.2 kB)
+[✓] Created snapshot.bundle (148.2 kB)
 ```
 
 Each run replaces that file, and the up-to-date check compares against it. There's only ever one bundle, so there's no name template and nothing to prune. `--name`, `--prune`, and `--prune-only` are errors with a file output.
@@ -204,7 +206,7 @@ repobundle --dry-run
 ```
 
 ```
-[i] Would create /home/me/code/myrepo/bundles/20261007T141020Z-8be41d0-myrepo.bundle
+[i] Would create bundles/20261007T141020Z-8be41d0-myrepo.bundle
 ```
 
 The up-to-date check still runs, so a dry run on an unchanged repo prints `Up to date:` instead. Warnings about the repo are still shown. Combined with pruning, it also lists what would be deleted (see [Pruning](./pruning.md)).
