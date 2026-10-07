@@ -86,10 +86,17 @@ impl Settings {
 /// Resolve `-o` against the working directory, unlike config output, which resolves against the
 /// repo root.
 fn output_path(flag: Option<&Path>, config: Option<PathBuf>, locations: &Locations) -> PathBuf {
-    match flag {
+    let path = match flag {
         Some(flag) => locations.cwd.join(flag),
         None => config.unwrap_or_else(|| locations.repo_root.join(DEFAULT_OUTPUT_DIR)),
-    }
+    };
+    without_dot_components(&path)
+}
+
+/// Drop `.` components, so `-o .` prints as the directory itself rather than ending in `/.`.
+/// Keep `..`, since removing it would change where a path through a symlink leads.
+fn without_dot_components(path: &Path) -> PathBuf {
+    path.components().collect()
 }
 
 /// Treat a path ending in `.bundle` as the exact file to write, and anything else as a
@@ -281,6 +288,23 @@ mod tests {
         };
         let settings = resolve_ok(&["-o", "out"], config);
         assert_eq!(output_dir(&settings), Path::new(CWD).join("out"));
+    }
+
+    // Compare the raw text in these two tests, since `Path` equality already ignores `.`.
+    #[test]
+    fn output_flag_of_dot_is_the_working_directory_itself() {
+        let settings = resolve_ok(&["-o", "."], Defaults::default());
+        assert_eq!(output_dir(&settings).as_os_str(), CWD);
+    }
+
+    #[test]
+    fn config_output_drops_dot_components() {
+        let config = Defaults {
+            output: Some(PathBuf::from("/work/./bundles/.")),
+            ..Defaults::default()
+        };
+        let settings = resolve_ok(&[], config);
+        assert_eq!(output_dir(&settings).as_os_str(), "/work/bundles");
     }
 
     #[test]
