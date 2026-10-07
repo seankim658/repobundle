@@ -27,6 +27,7 @@ repobundle --prune=2
 
 ```
 [✓] Created bundles/20261007T150211Z-c71d9e4-myrepo.bundle (149.0 kB)
+[i] Bundles over the prune limit
   - bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
   - bundles/20261005T174802Z-9d3f210-myrepo.bundle
 Delete 2 bundles? [y/N] y
@@ -101,6 +102,7 @@ If you change the name template, bundles made under the old template stop matchi
 Deleting asks first. repobundle lists the bundles it would delete on stderr, then waits for an answer.
 
 ```
+[i] Bundles over the prune limit
   - bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
   - bundles/20261005T174802Z-9d3f210-myrepo.bundle
 Delete 2 bundles? [y/N]

@@ -81,8 +81,11 @@ pub fn would_delete(bundles: &[BundleFile]) {
     }
 }
 
-/// List the bundles a confirmation prompt is about to ask about. Use stderr, like the prompt.
+/// List the bundles a confirmation prompt is about to ask about, under a heading of their own
+/// so the list doesn't read as part of the line above. Use stderr, like the prompt.
 pub fn deletion_candidates(bundles: &[BundleFile]) {
+    let badge = render_badge(Badge::Info, stream_colors().allows(Stream::Stderr));
+    eprintln!("{badge} Bundles over the prune limit");
     for bundle in bundles {
         eprintln!("  - {}", shown(&bundle.path));
     }
