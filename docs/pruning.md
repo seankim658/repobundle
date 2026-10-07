@@ -26,12 +26,12 @@ repobundle --prune=2
 ```
 
 ```
-Created /home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle (149.0 kB)
-  /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
-  /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
+[✓] Created /home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle (149.0 kB)
+  - /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
+  - /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
 Delete 2 bundles? [y/N] y
-Deleted /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
-Deleted /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
+[✓] Deleted /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
+[✓] Deleted /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
 ```
 
 Here the directory held three older bundles. The new one and the newest older one (`20261007T133512Z-3f9a2c1`, not listed) are kept, and the other two are deleted.
@@ -101,15 +101,15 @@ If you change the name template, bundles made under the old template stop matchi
 Deleting asks first. repobundle lists the bundles it would delete on stderr, then waits for an answer.
 
 ```
-  /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
-  /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
+  - /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
+  - /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
 Delete 2 bundles? [y/N]
 ```
 
 Only `y` or `yes`, in any case, deletes. Anything else, including just pressing Enter, keeps everything.
 
 ```
-Nothing deleted
+[i] Nothing deleted
 ```
 
 Declining isn't an error. The run still exits successfully, and a bundle it created is kept.
@@ -117,7 +117,7 @@ Declining isn't an error. The run still exits successfully, and a bundle it crea
 When there's nothing over the limit, there's nothing to ask.
 
 ```
-Nothing to prune
+[i] Nothing to prune
 ```
 
 Pass `--force` to delete without asking.
@@ -131,9 +131,9 @@ repobundle --prune=2 --dry-run
 ```
 
 ```
-Would create /home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle
-Would delete /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
-Would delete /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
+[i] Would create /home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle
+[i] Would delete /home/me/code/myrepo/bundles/20261006T091544Z-1b0e7a2-myrepo.bundle
+[i] Would delete /home/me/code/myrepo/bundles/20261005T174802Z-9d3f210-myrepo.bundle
 ```
 
 The bundle the run would create counts toward the limit even though it isn't written, so the preview matches what a real run would delete.
@@ -143,7 +143,7 @@ The bundle the run would create counts toward the limit even though it isn't wri
 Without a terminal to answer the prompt, such as in a script, a cron job, or with input piped in, repobundle refuses to delete rather than guessing.
 
 ```
-error: pruning would delete 2 bundles, but there is no terminal to confirm; pass --force to delete without asking
+[!] Pruning would delete 2 bundles, but there is no terminal to confirm; pass --force to delete without asking
 ```
 
 Nothing is deleted and the run exits with an error. If there's nothing to delete, there's nothing to confirm, and the run succeeds.

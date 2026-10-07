@@ -134,11 +134,19 @@ repobundle reads its own filenames back to find a repo's bundles for the skip ch
 | `{repo}.{branch}.bundle`        | No    | `.` can appear in a branch name        |
 | `{timestamp}-{hash}.bundle`     | No    | No `{repo}`                            |
 
-An invalid template stops the run with the rule it broke.
+An invalid template stops the run with the rule it broke. Passed with `--name`, it's rejected by the argument parser, which uses its own `error:` format.
+
+```bash
+repobundle --name '{branch}-{repo}.bundle'
+```
 
 ```
-error: name template must separate `{branch}` from `{repo}` with a character that `{branch}` can't contain, such as `@`
+error: invalid value '{branch}-{repo}.bundle' for '--name <TEMPLATE>': name template must separate `{branch}` from `{repo}` with a character that `{branch}` can't contain, such as `@`
+
+For more information, try '--help'.
 ```
+
+In a config file, the same rule appears after `[!] Config file <path> is malformed`.
 
 #### Ordering and Repeated Names
 
@@ -184,7 +192,7 @@ max_size_mb = 30
 ```
 
 ```
-warning: the bundle is 42.3 MB, over the `max_size_mb` limit of 30 MB
+[!] The bundle is 42.3 MB, over the `max_size_mb` limit of 30 MB
 ```
 
 The bundle is still created. The warning only tells you it may be too large to upload.

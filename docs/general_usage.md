@@ -28,7 +28,7 @@ repobundle
 ```
 
 ```
-Created /home/me/code/myrepo/bundles/20261007T133512Z-3f9a2c1-myrepo.bundle (148.2 kB)
+[✓] Created /home/me/code/myrepo/bundles/20261007T133512Z-3f9a2c1-myrepo.bundle (148.2 kB)
 ```
 
 That one command
@@ -67,7 +67,7 @@ repobundle --name "{date}-{branch}@{repo}.bundle"
 ```
 
 ```
-Created /home/me/code/myrepo/bundles/20261007-main@myrepo.bundle (148.2 kB)
+[✓] Created /home/me/code/myrepo/bundles/20261007-main@myrepo.bundle (148.2 kB)
 ```
 
 The config file guide lists every placeholder and the rules a template has to follow.
@@ -77,7 +77,7 @@ The config file guide lists every placeholder and the rules a template has to fo
 Before creating a bundle, repobundle compares the refs in your newest existing bundle with the refs in the repo. If every branch, tag, and `HEAD` still points where it did, there's nothing new to bundle, so it reports the bundle you already have.
 
 ```
-Up to date: /home/me/code/myrepo/bundles/20261007T133512Z-3f9a2c1-myrepo.bundle
+[✓] Up to date: /home/me/code/myrepo/bundles/20261007T133512Z-3f9a2c1-myrepo.bundle
 ```
 
 This only looks at commits. Uncommitted changes aren't part of a bundle, so they don't make it out of date (you'll get a [warning](#warnings) about them instead).
@@ -130,20 +130,20 @@ repobundle -o snapshot.bundle
 ```
 
 ```
-Created /home/me/code/myrepo/snapshot.bundle (148.2 kB)
+[✓] Created /home/me/code/myrepo/snapshot.bundle (148.2 kB)
 ```
 
 Each run replaces that file, and the up-to-date check compares against it. There's only ever one bundle, so there's no name template and nothing to prune. `--name`, `--prune`, and `--prune-only` are errors with a file output.
 
 ```
-error: `--name` needs a directory output, but /home/me/code/myrepo/snapshot.bundle ends in `.bundle`
+[!] `--name` needs a directory output, but /home/me/code/myrepo/snapshot.bundle ends in `.bundle`
 ```
 
 `name` and `prune` from a config file are ignored for a file output, so a configured prune count doesn't get in the way of a one-off `-o snapshot.bundle`.
 
 ## Warnings
 
-Warnings point out things the bundle won't contain or problems it might cause. They print to stderr after the result line, so scripts reading stdout only see the result. The bundle is still created.
+Warnings point out things the bundle won't contain or problems it might cause. They print to stderr after the result line, each after a `[!]` badge, so scripts reading stdout only see the result. The bundle is still created.
 
 | Warning             | When                                                    |
 | ------------------- | ------------------------------------------------------- |
@@ -156,7 +156,7 @@ Warnings point out things the bundle won't contain or problems it might cause. T
 **Uncommitted changes.** A bundle only holds commits. Up to 10 changed paths are listed, in `git status --short` form.
 
 ```
-warning: uncommitted changes are not in the bundle
+[!] Uncommitted changes are not in the bundle
   ?? notes.txt
    M src/main.rs
 ```
@@ -166,25 +166,25 @@ Commit or stash them first if they should be included.
 **Submodules.** The bundle records which commit each submodule points to, but not the submodule's own files.
 
 ```
-warning: submodule contents are not in the bundle, only the commits each submodule points to
+[!] Submodule contents are not in the bundle, only the commits each submodule points to
 ```
 
 **Git LFS.** Files stored with LFS are replaced in history by small pointer files, and the bundle only has the pointers.
 
 ```
-warning: Git LFS file contents are not in the bundle, only their pointer files
+[!] Git LFS file contents are not in the bundle, only their pointer files
 ```
 
 **Too large.** Only checked when you set `max_size_mb` in a [config file](./config_file.md#max_size_mb). It's meant to catch bundles too big to upload.
 
 ```
-warning: the bundle is 42.3 MB, over the `max_size_mb` limit of 30 MB
+[!] The bundle is 42.3 MB, over the `max_size_mb` limit of 30 MB
 ```
 
 **Output not ignored.**
 
 ```
-warning: bundles is inside the repo but not ignored, so git lists it as untracked; add it to .gitignore or .git/info/exclude
+[!] The output bundles is inside the repo but not ignored, so git lists it as untracked; add it to .gitignore or .git/info/exclude
 ```
 
 `.git/info/exclude` works like `.gitignore` but is never committed, so it keeps the rule to your own clone.
@@ -204,25 +204,25 @@ repobundle --dry-run
 ```
 
 ```
-Would create /home/me/code/myrepo/bundles/20261007T141020Z-8be41d0-myrepo.bundle
+[i] Would create /home/me/code/myrepo/bundles/20261007T141020Z-8be41d0-myrepo.bundle
 ```
 
 The up-to-date check still runs, so a dry run on an unchanged repo prints `Up to date:` instead. Warnings about the repo are still shown. Combined with pruning, it also lists what would be deleted (see [Pruning](./pruning.md)).
 
 ## Errors
 
-Errors print to stderr as `error:` followed by the reason, and repobundle exits with a non-zero status. The errors below are all caught before a bundle is written.
+Errors print to stderr after a `[!]` badge, and repobundle exits with a non-zero status. The errors below are all caught before a bundle is written.
 
 **No commits.** There's nothing to bundle yet.
 
 ```
-error: the repository at /home/me/code/myrepo has no commits yet; make a commit first
+[!] The repository at /home/me/code/myrepo has no commits yet; make a commit first
 ```
 
 **Shallow clone.** A clone made with `--depth` is missing older history. git will build and even verify a bundle from it, but cloning from that bundle fails, so repobundle refuses up front.
 
 ```
-error: the repository at /home/me/code/myrepo is a shallow clone, so a bundle of it could not be cloned; run `git fetch --unshallow` first
+[!] The repository at /home/me/code/myrepo is a shallow clone, so a bundle of it could not be cloned; run `git fetch --unshallow` first
 ```
 
 Run `git fetch --unshallow` to download the rest of the history, then try again.
@@ -232,7 +232,7 @@ Run `git fetch --unshallow` to download the rest of the history, then try again.
 **git not found.**
 
 ```
-error: git was not found on the PATH; install git and try again
+[!] Git was not found on the PATH; install git and try again
 ```
 
 ## Using a Bundle
@@ -255,7 +255,7 @@ Because the bundle includes `HEAD`, a clone from it checks out the branch you we
 
 ## Color and Logging
 
-Labels like `Created` and `warning:` are colored when the output goes to a terminal and plain otherwise. stdout and stderr are decided separately, so `repobundle 2> log.txt` keeps color on screen and writes plain warnings to the file. The usual variables override this.
+Every message starts with a badge. `[✓]` marks something done, `[i]` marks information such as a dry run, and `[!]` marks a warning (yellow) or an error (red). The badges are colored when the output goes to a terminal and plain otherwise. stdout and stderr are decided separately, so `repobundle 2> log.txt` keeps color on screen and writes plain warnings to the file. The usual variables override this.
 
 | Variable           | Effect                                            |
 | ------------------ | ------------------------------------------------- |
