@@ -31,9 +31,43 @@ pub enum Warning {
     UnignoredOutput(PathBuf),
     /// Holds the previous bundle, whose refs couldn't be read for the up-to-date check.
     UnreadableBundle(PathBuf),
-    /// Holds how many bundles a config-only prune would have deleted, had a terminal been
-    /// there to confirm.
-    PruneSkipped(usize),
+    /// Holds how many bundles a config-only prune would have deleted, had it been able to ask.
+    PruneSkipped {
+        count: usize,
+        reason: PromptUnavailable,
+    },
+}
+
+/// Why a run can't ask before deleting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptUnavailable {
+    NoTerminal,
+    /// `--json` output is for scripts, so it never stops to ask.
+    Json,
+}
+
+impl fmt::Display for PromptUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoTerminal => formatter.write_str("there is no terminal to confirm"),
+            Self::Json => formatter.write_str("`--json` never asks to confirm"),
+        }
+    }
+}
+
+impl Warning {
+    /// Name the warning in a form scripts can match on, which stays fixed when the message changes.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::UncommittedChanges(_) => "uncommitted_changes",
+            Self::Submodules => "submodules",
+            Self::Lfs => "lfs",
+            Self::TooLarge { .. } => "too_large",
+            Self::UnignoredOutput(_) => "unignored_output",
+            Self::UnreadableBundle(_) => "unreadable_bundle",
+            Self::PruneSkipped { .. } => "prune_skipped",
+        }
+    }
 }
 
 impl fmt::Display for Warning {
@@ -60,9 +94,9 @@ impl fmt::Display for Warning {
                 "the bundle {} can't be read, so it wasn't reused; run `git bundle verify` on it to see why",
                 display_path(path)
             ),
-            Self::PruneSkipped(count) => write!(
+            Self::PruneSkipped { count, reason } => write!(
                 formatter,
-                "pruning would delete {}, but there is no terminal to confirm, so nothing was deleted; pass --yes to delete without asking",
+                "pruning would delete {}, but {reason}, so nothing was deleted; pass --yes to delete without asking",
                 count_bundles(*count)
             ),
         }
@@ -366,9 +400,24 @@ mod tests {
 
     #[test]
     fn skipped_prune_message_counts_bundles_and_names_yes() {
-        let message = Warning::PruneSkipped(2).to_string();
+        let warning = Warning::PruneSkipped {
+            count: 2,
+            reason: PromptUnavailable::NoTerminal,
+        };
+        let message = warning.to_string();
         assert!(message.contains("2 bundles"), "{message}");
+        assert!(message.contains("no terminal"), "{message}");
         assert!(message.contains("--yes"), "{message}");
+    }
+
+    #[test]
+    fn skipped_prune_message_blames_json_when_json_is_why() {
+        let warning = Warning::PruneSkipped {
+            count: 1,
+            reason: PromptUnavailable::Json,
+        };
+        let message = warning.to_string();
+        assert!(message.contains("`--json` never asks"), "{message}");
     }
 
     #[test]

@@ -100,6 +100,7 @@ Options:
       --force             Create even if an identical bundle exists
   -y, --yes               Delete bundles over the prune limit without asking
       --no-warnings       Suppress all warnings
+      --json              Print the result as one JSON object on stdout
       --verbose           Log every git command and its exit status
   -h, --help              Print help
   -V, --version           Print version

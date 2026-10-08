@@ -76,6 +76,10 @@ pub struct BundleArgs {
     #[arg(long)]
     pub no_warnings: bool,
 
+    /// Print the result as one JSON object on stdout.
+    #[arg(long)]
+    pub json: bool,
+
     /// Log every git command and its exit status.
     #[arg(long)]
     pub verbose: bool,

@@ -12,7 +12,7 @@ use crate::prompt;
 use crate::prune;
 use crate::report::{BundleOutcome, Reporter};
 use crate::settings::{Output, Prune, PruneOrigin, Settings};
-use crate::warnings::{self, Warning};
+use crate::warnings::{self, PromptUnavailable, Warning};
 
 /// Carries out one run against a repo, sending each result to a reporter.
 pub struct Runner<'a> {
@@ -59,6 +59,10 @@ impl<'a> Runner<'a> {
         };
         let found = dir.find(&settings.repo_name)?;
         let excess = prune::select(found, *keep, Some(outcome.path()));
+        if excess.is_empty() {
+            self.reporter.nothing_over_limit();
+            return Ok(());
+        }
         self.remove_excess(&excess, *origin)
     }
 
@@ -124,11 +128,8 @@ impl<'a> Runner<'a> {
         self.remove_excess(&excess, PruneOrigin::Flag)
     }
 
-    /// Stay silent when nothing is over the limit, so a routine create prints only its result.
+    /// Delete `excess`, which must not be empty, once the run is allowed to.
     fn remove_excess(&mut self, excess: &[BundleFile], origin: PruneOrigin) -> Result<()> {
-        if excess.is_empty() {
-            return Ok(());
-        }
         if self.settings.dry_run {
             self.reporter.would_delete(excess);
             return Ok(());
@@ -136,8 +137,8 @@ impl<'a> Runner<'a> {
         if self.settings.yes {
             return self.delete_bundles(excess);
         }
-        if !io::stdin().is_terminal() {
-            return self.prune_without_terminal(excess.len(), origin);
+        if let Some(reason) = self.prompt_unavailable() {
+            return self.prune_without_prompt(excess.len(), origin, reason);
         }
         if !confirm_deletion(excess)? {
             self.reporter.nothing_deleted();
@@ -146,17 +147,34 @@ impl<'a> Runner<'a> {
         self.delete_bundles(excess)
     }
 
+    fn prompt_unavailable(&self) -> Option<PromptUnavailable> {
+        if self.settings.json {
+            return Some(PromptUnavailable::Json);
+        }
+        if !io::stdin().is_terminal() {
+            return Some(PromptUnavailable::NoTerminal);
+        }
+        None
+    }
+
     /// Skip a prune that only config asked for, so a scheduled run still succeeds. Refuse one
     /// asked for on the command line, since skipping it would hide that the flag did nothing.
-    fn prune_without_terminal(&mut self, count: usize, origin: PruneOrigin) -> Result<()> {
+    fn prune_without_prompt(
+        &mut self,
+        count: usize,
+        origin: PruneOrigin,
+        reason: PromptUnavailable,
+    ) -> Result<()> {
         if origin == PruneOrigin::Flag {
             bail!(
-                "pruning would delete {}, but there is no terminal to confirm; pass --yes to delete without asking",
+                "pruning would delete {}, but {reason}; pass --yes to delete without asking",
                 output::count_bundles(count)
             );
         }
+        self.reporter.prune_skipped();
         if self.settings.warnings {
-            self.reporter.warnings(&[Warning::PruneSkipped(count)]);
+            self.reporter
+                .warnings(&[Warning::PruneSkipped { count, reason }]);
         }
         Ok(())
     }

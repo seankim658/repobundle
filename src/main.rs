@@ -12,7 +12,7 @@ use repobundle::config;
 use repobundle::git::{self, Git};
 use repobundle::logging;
 use repobundle::output;
-use repobundle::report::TextReporter;
+use repobundle::report::{JsonReporter, TextReporter};
 use repobundle::run::Runner;
 use repobundle::settings::{Locations, Settings};
 
@@ -43,7 +43,12 @@ fn run_bundle(args: &BundleArgs) -> Result<()> {
     let git = Git::discover(&args.path)?;
     let settings = load_settings(args, &git)?;
     debug!(?settings, "resolved settings");
-    Runner::new(&git, &settings, &mut TextReporter).run()
+    if !settings.json {
+        return Runner::new(&git, &settings, &mut TextReporter).run();
+    }
+    let mut reporter = JsonReporter::default();
+    Runner::new(&git, &settings, &mut reporter).run()?;
+    reporter.print()
 }
 
 fn load_settings(args: &BundleArgs, git: &Git) -> Result<Settings> {

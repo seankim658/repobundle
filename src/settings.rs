@@ -24,6 +24,7 @@ pub struct Settings {
     pub force: bool,
     pub yes: bool,
     pub warnings: bool,
+    pub json: bool,
 }
 
 /// Where bundles live. Only a directory holds more than one bundle, so only a directory can be
@@ -92,6 +93,7 @@ impl Settings {
             force: args.force,
             yes: args.yes,
             warnings: !args.no_warnings,
+            json: args.json,
         })
     }
 }
@@ -272,6 +274,7 @@ mod tests {
             force: false,
             yes: false,
             warnings: true,
+            json: false,
         };
         assert_eq!(resolve_ok(&[], Defaults::default()), expected);
     }

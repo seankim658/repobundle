@@ -159,6 +159,8 @@ Without a terminal to answer the prompt, such as in a script, a cron job, or wit
 
 If there's nothing to delete, there's nothing to confirm, and either way the run succeeds quietly.
 
+`--json` is handled the same way, even on a terminal, since it never stops to ask. Its messages name `--json` as the reason instead of the missing terminal.
+
 To prune unattended, pass `--yes`. It keeps the [up-to-date check](./general_usage.md#when-nothing-has-changed), so a run with no new commits reuses the last bundle and makes no new one.
 
 ```bash

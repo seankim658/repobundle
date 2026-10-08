@@ -125,7 +125,8 @@ impl Fixture {
         fs::write(self.repo_dir().join(name), contents).unwrap();
     }
 
-    fn run(&self, args: &[&str]) -> Output {
+    /// Run repobundle in the repo and return everything it did, for checks across both streams.
+    pub fn run(&self, args: &[&str]) -> Output {
         self.command(args).output().unwrap()
     }
 

@@ -12,6 +12,7 @@ This guide walks through creating bundles, reading what repobundle prints, and g
   - [Writing a Single File](#writing-a-single-file)
 - [Warnings](#warnings)
 - [Dry Runs](#dry-runs)
+- [JSON Output](#json-output)
 - [Errors](#errors)
 - [Using a Bundle](#using-a-bundle)
 - [Color and Logging](#color-and-logging)
@@ -217,6 +218,51 @@ repobundle --dry-run
 ```
 
 The up-to-date check still runs, so a dry run on an unchanged repo prints `Up to date:` instead. Warnings about the repo are still shown. Combined with pruning, it also lists what would be deleted (see [Pruning](./pruning.md)).
+
+## JSON Output
+
+`--json` prints the result as one JSON object on stdout instead of the usual messages, for scripts and other tools to read.
+
+```bash
+repobundle --json
+```
+
+```json
+{
+  "bundle": {
+    "status": "created",
+    "path": "/home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle",
+    "size": 149012
+  },
+  "warnings": [
+    {
+      "kind": "uncommitted_changes",
+      "message": "Uncommitted changes are not in the bundle\n  ?? notes.txt"
+    }
+  ],
+  "prune": {
+    "status": "none",
+    "paths": []
+  }
+}
+```
+
+Paths are always absolute, wherever you run from.
+
+| Field            | Contents                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `bundle`         | The bundle this run points to, or `null` with `--prune-only`                                    |
+| `bundle.status`  | `created`, `up_to_date`, or `would_create` (a dry run)                                          |
+| `bundle.size`    | The size in bytes of a bundle this run created, otherwise `null`                                |
+| `warnings`       | Every [warning](#warnings), each with a `kind` and the `message` you'd see without `--json`     |
+| `prune.status`   | `none`, `nothing_to_prune`, `would_delete`, `deleted`, or `skipped`                             |
+| `prune.paths`    | The bundles deleted, or with `would_delete` the ones a real run would delete                    |
+
+Match on a warning's `kind` rather than its message, since messages may be reworded. The kinds are `uncommitted_changes`, `submodules`, `lfs`, `too_large`, `unignored_output`, `unreadable_bundle`, and `prune_skipped`.
+
+**It never asks.** A prune that needs confirmation is handled as if there were no terminal (see [Scripts and Scheduled Runs](./pruning.md#scripts-and-scheduled-runs)). Pass `--yes` to delete. A prune from a config file is skipped, with `prune.status` set to `skipped` and a `prune_skipped` warning. A `--prune` or `--prune-only` flag fails the run.
+
+**Errors stay on stderr.** If the run fails, stdout is empty and the error prints to stderr as usual, with a non-zero exit status. Check the exit status before reading stdout.
 
 ## Errors
 

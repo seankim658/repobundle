@@ -24,6 +24,7 @@ Options:
       --force             Create even if an identical bundle exists
   -y, --yes               Delete bundles over the prune limit without asking
       --no-warnings       Suppress all warnings
+      --json              Print the result as one JSON object on stdout
       --verbose           Log every git command and its exit status
   -h, --help              Print help
   -V, --version           Print version
@@ -38,6 +39,8 @@ Options:
 **File outputs.** With `-o` ending in `.bundle`, `--name`, `--prune`, and `--prune-only` are errors, and `name` and `prune` from config files are ignored. See [Writing a Single File](./general_usage.md#writing-a-single-file).
 
 **`--force` and `--yes` are separate.** `--force` creates a new bundle even when nothing has changed. `--yes` deletes bundles over the prune limit without asking. `--force` can't be combined with `--prune-only`, which creates nothing. See [Scripts and Scheduled Runs](./pruning.md#scripts-and-scheduled-runs) for pruning without a terminal.
+
+**`--json` never asks.** With `--json`, a prune that needs confirmation is treated as if there were no terminal, so pass `--yes` to delete. See [JSON Output](./general_usage.md#json-output).
 
 **`--dry-run` wins.** With `--dry-run`, nothing is written or deleted, even alongside `--force` or `--yes`.
 

@@ -152,7 +152,7 @@ fn render_badge(kind: Badge, colored: bool) -> String {
 }
 
 /// Uppercase the first letter, since each message reads as a sentence after its badge.
-fn capitalize(text: &str) -> String {
+pub fn capitalize(text: &str) -> String {
     let mut chars = text.chars();
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),
