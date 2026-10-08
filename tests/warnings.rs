@@ -114,3 +114,15 @@ fn bundle_under_max_size_is_not_reported() {
 
     assert!(!stderr.contains("max_size_mb"), "{stderr}");
 }
+
+#[test]
+fn unreadable_previous_bundle_is_reported_and_replaced() {
+    let fixture = Fixture::with_commit();
+    fixture.write_file("snapshot.bundle", "not a bundle");
+    let stderr = fixture.succeed_with_stderr(&["-o", "snapshot.bundle"]);
+
+    let expected = "The bundle snapshot.bundle can't be read, so it wasn't reused";
+    assert!(stderr.contains(expected), "{stderr}");
+    let bundle = fixture.repo_dir().join("snapshot.bundle");
+    assert!(fixture.git.verify_bundle(&bundle).is_ok());
+}

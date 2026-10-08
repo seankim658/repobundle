@@ -51,15 +51,23 @@ enum Badge {
 
 pub fn created(path: &Path, size: u64) {
     let badge = badge(Badge::Success);
-    println!("{badge} Created {} ({})", shown(path), format_size(size));
+    println!(
+        "{badge} Created {} ({})",
+        display_path(path),
+        format_size(size)
+    );
 }
 
 pub fn up_to_date(path: &Path) {
-    println!("{} Up to date: {}", badge(Badge::Success), shown(path));
+    println!(
+        "{} Up to date: {}",
+        badge(Badge::Success),
+        display_path(path)
+    );
 }
 
 pub fn would_create(path: &Path) {
-    println!("{} Would create {}", badge(Badge::Info), shown(path));
+    println!("{} Would create {}", badge(Badge::Info), display_path(path));
 }
 
 /// Print to stderr, so warnings never mix into the output a script reads.
@@ -77,7 +85,7 @@ pub fn nothing_to_prune() {
 pub fn would_delete(bundles: &[BundleFile]) {
     let badge = badge(Badge::Info);
     for bundle in bundles {
-        println!("{badge} Would delete {}", shown(&bundle.path));
+        println!("{badge} Would delete {}", display_path(&bundle.path));
     }
 }
 
@@ -87,7 +95,7 @@ pub fn deletion_candidates(bundles: &[BundleFile]) {
     let badge = render_badge(Badge::Info, stream_colors().allows(Stream::Stderr));
     eprintln!("{badge} Bundles over the prune limit");
     for bundle in bundles {
-        eprintln!("  - {}", shown(&bundle.path));
+        eprintln!("  - {}", display_path(&bundle.path));
     }
 }
 
@@ -104,7 +112,7 @@ pub fn nothing_deleted() {
 }
 
 pub fn deleted(path: &Path) {
-    println!("{} Deleted {}", badge(Badge::Success), shown(path));
+    println!("{} Deleted {}", badge(Badge::Success), display_path(path));
 }
 
 pub fn error(error: &anyhow::Error) {
@@ -122,7 +130,8 @@ pub fn count_bundles(count: usize) -> String {
     format!("{count} bundles")
 }
 
-fn shown(path: &Path) -> String {
+/// Shorten `path` the way every message prints it. Errors and logs print full paths instead.
+pub fn display_path(path: &Path) -> String {
     PATH_BASES
         .get_or_init(PathBases::from_process)
         .shorten(path)

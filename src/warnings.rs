@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::git::Git;
-use crate::output::count_bundles;
+use crate::output::{count_bundles, display_path};
 use crate::settings::Output;
 use crate::size::{BYTES_PER_MB, format_size};
 
@@ -29,6 +29,8 @@ pub enum Warning {
     },
     /// Holds the output's path relative to the repo root.
     UnignoredOutput(PathBuf),
+    /// Holds the previous bundle, whose refs couldn't be read for the up-to-date check.
+    UnreadableBundle(PathBuf),
     /// Holds how many bundles a config-only prune would have deleted, had a terminal been
     /// there to confirm.
     PruneSkipped(usize),
@@ -52,6 +54,11 @@ impl fmt::Display for Warning {
                 formatter,
                 "the output {} is inside the repo but not ignored, so git lists it as untracked; add it to .gitignore or .git/info/exclude",
                 path.display()
+            ),
+            Self::UnreadableBundle(path) => write!(
+                formatter,
+                "the bundle {} can't be read, so it wasn't reused; run `git bundle verify` on it to see why",
+                display_path(path)
             ),
             Self::PruneSkipped(count) => write!(
                 formatter,

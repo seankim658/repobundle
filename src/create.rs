@@ -62,20 +62,28 @@ pub fn previous_bundle(output: &Output, repo: &RepoName) -> Result<Option<PathBu
     }
 }
 
-/// Report whether `bundle` holds exactly the refs a new bundle would. Treat a bundle whose refs
-/// can't be read as different, so a damaged one gets replaced instead of blocking creation.
-pub fn has_current_refs(git: &Git, bundle: &Path, refs: &RefSet) -> Result<bool> {
+/// How a previous bundle's refs compare with the refs a new bundle would hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefMatch {
+    Current,
+    OutOfDate,
+    /// The bundle's refs can't be read, so it can't be reused and a new bundle is made instead.
+    Unreadable,
+}
+
+/// Compare the refs recorded in `bundle` with the refs a new bundle of `refs` would hold.
+pub fn compare_refs(git: &Git, bundle: &Path, refs: &RefSet) -> Result<RefMatch> {
     let recorded = match git.bundle_refs(bundle) {
         Ok(recorded) => recorded,
         Err(error) => {
-            debug!(
-                "treating {} as different, since its refs can't be read: {error:#}",
-                bundle.display()
-            );
-            return Ok(false);
+            debug!("can't read the refs of {}: {error:#}", bundle.display());
+            return Ok(RefMatch::Unreadable);
         }
     };
-    Ok(recorded == git.current_refs(refs)?)
+    if recorded == git.current_refs(refs)? {
+        return Ok(RefMatch::Current);
+    }
+    Ok(RefMatch::OutOfDate)
 }
 
 /// Refuse a name the template's matcher can't read back, since pruning and the skip check
@@ -294,7 +302,10 @@ mod tests {
         let refs = all_refs(&git);
         write_bundle(&git, &bundle, &refs).unwrap();
 
-        assert!(has_current_refs(&git, &bundle, &refs).unwrap());
+        assert_eq!(
+            compare_refs(&git, &bundle, &refs).unwrap(),
+            RefMatch::Current
+        );
     }
 
     #[test]
@@ -305,7 +316,10 @@ mod tests {
         write_bundle(&git, &bundle, &refs).unwrap();
         run_with_identity(&git, &["commit", "-q", "--allow-empty", "-m", "second"]);
 
-        assert!(!has_current_refs(&git, &bundle, &refs).unwrap());
+        assert_eq!(
+            compare_refs(&git, &bundle, &refs).unwrap(),
+            RefMatch::OutOfDate
+        );
     }
 
     #[test]
@@ -321,16 +335,25 @@ mod tests {
         write_bundle(&git, &head, &head_only).unwrap();
 
         git.run(["branch", "-f", "feature", "main"]).unwrap();
-        assert!(!has_current_refs(&git, &all, &every_ref).unwrap());
-        assert!(has_current_refs(&git, &head, &head_only).unwrap());
+        assert_eq!(
+            compare_refs(&git, &all, &every_ref).unwrap(),
+            RefMatch::OutOfDate
+        );
+        assert_eq!(
+            compare_refs(&git, &head, &head_only).unwrap(),
+            RefMatch::Current
+        );
     }
 
     #[test]
-    fn unreadable_bundle_counts_as_different() {
+    fn unreadable_bundle_is_reported_as_unreadable() {
         let (dir, git) = test_repo();
         let bundle = dir.path().join("repo.bundle");
         fs::write(&bundle, "not a bundle").unwrap();
 
-        assert!(!has_current_refs(&git, &bundle, &all_refs(&git)).unwrap());
+        assert_eq!(
+            compare_refs(&git, &bundle, &all_refs(&git)).unwrap(),
+            RefMatch::Unreadable
+        );
     }
 }

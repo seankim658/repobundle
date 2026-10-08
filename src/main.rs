@@ -12,7 +12,7 @@ use tracing::debug;
 use repobundle::bundles::{BundleDir, BundleFile};
 use repobundle::cli::{BundleArgs, Cli, Command};
 use repobundle::config;
-use repobundle::create;
+use repobundle::create::{self, RefMatch};
 use repobundle::git::{self, Git, RefSet};
 use repobundle::logging;
 use repobundle::output;
@@ -60,7 +60,7 @@ fn run_bundle(args: &BundleArgs) -> Result<()> {
 /// Check the repo before creating, so the warnings describe the state that was bundled.
 fn create_and_prune(git: &Git, settings: &Settings) -> Result<()> {
     let mut warnings = repo_warnings(git, settings)?;
-    let bundle = create_bundle(git, settings)?;
+    let bundle = create_bundle(git, settings, &mut warnings)?;
     warnings.extend(bundle_warnings(git, settings, &bundle)?);
     output::warnings(&warnings);
     let Output::Directory {
@@ -105,13 +105,20 @@ fn load_settings(args: &BundleArgs, git: &Git) -> Result<Settings> {
     Settings::resolve(args, config, &locations)
 }
 
-/// Return the bundle this run points to, whether it was created, reused, or only planned.
-fn create_bundle(git: &Git, settings: &Settings) -> Result<PathBuf> {
+/// Return the bundle this run points to, whether it was created, reused, or only planned. Add a
+/// warning when the previous bundle couldn't be read.
+fn create_bundle(git: &Git, settings: &Settings, warnings: &mut Vec<Warning>) -> Result<PathBuf> {
     let refs = git.ref_set(settings.refs)?;
     let path = create::bundle_path(git, &settings.output, &settings.repo_name, &refs)?;
-    if let Some(existing) = unchanged_bundle(git, settings, &refs)? {
-        output::up_to_date(&existing);
-        return Ok(existing);
+    match compare_with_previous(git, settings, &refs)? {
+        Some((existing, RefMatch::Current)) => {
+            output::up_to_date(&existing);
+            return Ok(existing);
+        }
+        Some((previous, RefMatch::Unreadable)) if settings.warnings => {
+            warnings.push(Warning::UnreadableBundle(previous));
+        }
+        _ => {}
     }
     if settings.dry_run {
         output::would_create(&path);
@@ -122,18 +129,20 @@ fn create_bundle(git: &Git, settings: &Settings) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Return the previous bundle when it already holds the current refs, unless `--force` is set.
-fn unchanged_bundle(git: &Git, settings: &Settings, refs: &RefSet) -> Result<Option<PathBuf>> {
+/// Compare the previous bundle with the current refs, unless `--force` skips the check.
+fn compare_with_previous(
+    git: &Git,
+    settings: &Settings,
+    refs: &RefSet,
+) -> Result<Option<(PathBuf, RefMatch)>> {
     if settings.force {
         return Ok(None);
     }
     let Some(previous) = create::previous_bundle(&settings.output, &settings.repo_name)? else {
         return Ok(None);
     };
-    if create::has_current_refs(git, &previous, refs)? {
-        return Ok(Some(previous));
-    }
-    Ok(None)
+    let ref_match = create::compare_refs(git, &previous, refs)?;
+    Ok(Some((previous, ref_match)))
 }
 
 fn prune_only(settings: &Settings, dir: &BundleDir, keep: NonZeroUsize) -> Result<()> {

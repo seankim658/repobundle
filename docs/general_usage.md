@@ -90,7 +90,7 @@ Pass `--force` to create a new bundle anyway.
 repobundle --force
 ```
 
-If the newest bundle is damaged and its refs can't be read, it counts as out of date and a fresh bundle replaces it.
+If the newest bundle is damaged and its refs can't be read, it isn't reused. A fresh bundle is created and you get a [warning](#warnings) naming the damaged one.
 
 ## Choosing What to Bundle
 
@@ -154,6 +154,7 @@ Warnings point out things the bundle won't contain or problems it might cause. T
 | Git LFS             | The repo's `.gitattributes` uses `filter=lfs`           |
 | Too large           | The bundle is over `max_size_mb` from a config file     |
 | Output not ignored  | The output is inside the repo and git doesn't ignore it |
+| Unreadable bundle   | The newest existing bundle can't be read                |
 
 **Uncommitted changes.** A bundle only holds commits. Up to 10 changed paths are listed, in `git status --short` form.
 
@@ -193,6 +194,12 @@ Commit or stash them first if they should be included.
 
 ```bash
 echo "/bundles/" >> .git/info/exclude
+```
+
+**Unreadable bundle.** The [up-to-date check](#when-nothing-has-changed) couldn't read the newest bundle, so a new one was made instead of reusing it. With a directory output, the damaged bundle is left in place until you delete it or a prune removes it. With a [single-file output](#writing-a-single-file), the new bundle replaces it.
+
+```
+[!] The bundle bundles/20261007T133512Z-3f9a2c1-myrepo.bundle can't be read, so it wasn't reused; run `git bundle verify` on it to see why
 ```
 
 Pass `--no-warnings` to silence all of them. If a run fails, only the error is printed, never warnings.
