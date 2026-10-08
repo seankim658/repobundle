@@ -314,6 +314,14 @@ With `--list`, the object holds the listing instead.
 
 **Errors stay on stderr.** If the run fails, stdout is empty and the error prints to stderr as usual, with a non-zero exit status. Check the exit status before reading stdout.
 
+**Copy the bundle's path.** Pipe `bundle.path` to your clipboard tool, then paste it into an upload dialog. On macOS, press Cmd+Shift+G in the file picker to paste a path.
+
+```bash
+repobundle --json | jq -r .bundle.path | pbcopy
+```
+
+On Linux, use `wl-copy` or `xclip -selection clipboard` in place of `pbcopy`.
+
 ## Errors
 
 Errors print to stderr after a `[!]` badge, and repobundle exits with a non-zero status. The errors below are all caught before a bundle is written.
