@@ -121,6 +121,22 @@ impl Fixture {
         stderr
     }
 
+    /// Create `count` bundles, one per new commit, and return their file names oldest first.
+    pub fn create_bundles(&self, count: usize) -> Vec<String> {
+        let mut names = Vec::new();
+        for index in 0..count {
+            if index > 0 {
+                self.commit(&format!("commit {index}"));
+            }
+            let before = self.default_bundles();
+            self.succeed(&[]);
+            let after = self.default_bundles();
+            let created = after.iter().find(|path| !before.contains(path)).unwrap();
+            names.push(created.file_name().unwrap().to_string_lossy().into_owned());
+        }
+        names
+    }
+
     pub fn write_file(&self, name: &str, contents: &str) {
         fs::write(self.repo_dir().join(name), contents).unwrap();
     }

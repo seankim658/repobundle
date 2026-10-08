@@ -37,6 +37,8 @@ pub enum Action {
     CreateAndPrune { dir: BundleDir, limit: PruneLimit },
     /// Keep only the newest `keep` bundles in `dir` without creating one.
     PruneOnly { dir: BundleDir, keep: NonZeroUsize },
+    /// Show the bundles already in the output and whether each holds the current refs.
+    List(Output),
 }
 
 /// Where bundles live.
@@ -124,7 +126,7 @@ fn without_dot_components(path: &Path) -> PathBuf {
 fn resolve_action(args: &BundleArgs, path: PathBuf, defaults: DirectoryDefaults) -> Result<Action> {
     if path.extension() == Some(OsStr::new(BUNDLE_EXTENSION)) {
         reject_directory_only_flags(args, &path)?;
-        return Ok(Action::Create(Output::File(path)));
+        return Ok(file_action(args, path));
     }
     let name = args
         .name
@@ -138,11 +140,23 @@ fn resolve_action(args: &BundleArgs, path: PathBuf, defaults: DirectoryDefaults)
     ))
 }
 
+fn file_action(args: &BundleArgs, path: PathBuf) -> Action {
+    let output = Output::File(path);
+    if args.list {
+        return Action::List(output);
+    }
+    Action::Create(output)
+}
+
+/// Ignore the config's `prune` when listing, since a list deletes nothing.
 fn directory_action(
     args: &BundleArgs,
     dir: BundleDir,
     config_prune: Option<NonZeroUsize>,
 ) -> Action {
+    if args.list {
+        return Action::List(Output::Directory(dir));
+    }
     if let Some(count) = args.prune_only {
         let keep = count_or_config(count, config_prune);
         return Action::PruneOnly { dir, keep };
@@ -279,8 +293,9 @@ mod tests {
         match &settings.action {
             Action::Create(Output::Directory(dir))
             | Action::CreateAndPrune { dir, .. }
-            | Action::PruneOnly { dir, .. } => &dir.path,
-            Action::Create(Output::File(path)) => {
+            | Action::PruneOnly { dir, .. }
+            | Action::List(Output::Directory(dir)) => &dir.path,
+            Action::Create(Output::File(path)) | Action::List(Output::File(path)) => {
                 panic!("expected a directory, got file {}", path.display())
             }
         }
@@ -454,6 +469,23 @@ mod tests {
                 "{flags:?} with config prune {config_prune:?}"
             );
         }
+    }
+
+    #[test]
+    fn list_ignores_config_prune() {
+        let config = Defaults {
+            prune: Some(count(3)),
+            ..Defaults::default()
+        };
+        let expected = Action::List(Output::Directory(default_dir(default_template())));
+        assert_eq!(resolve_ok(&["--list"], config).action, expected);
+    }
+
+    #[test]
+    fn list_with_file_output_lists_that_file() {
+        let settings = resolve_ok(&["--list", "-o", "x.bundle"], Defaults::default());
+        let expected = Action::List(Output::File(Path::new(CWD).join("x.bundle")));
+        assert_eq!(settings.action, expected);
     }
 
     // Repo name

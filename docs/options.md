@@ -20,6 +20,7 @@ Options:
       --prune[=<N>]       After creating, keep only the newest N bundles of this repo
       --prune-only[=<N>]  Keep only the newest N bundles of this repo without creating one
       --no-prune          Ignore the `prune` value from config files
+      --list              List this repo's bundles, newest first, without creating one
       --dry-run           Report what would be created and deleted without doing either
       --force             Create even if an identical bundle exists
   -y, --yes               Delete bundles over the prune limit without asking
@@ -39,6 +40,8 @@ Options:
 **File outputs.** With `-o` ending in `.bundle`, `--name`, `--prune`, and `--prune-only` are errors, and `name` and `prune` from config files are ignored. See [Writing a Single File](./general_usage.md#writing-a-single-file).
 
 **`--force` and `--yes` are separate.** `--force` creates a new bundle even when nothing has changed. `--yes` deletes bundles over the prune limit without asking. `--force` can't be combined with `--prune-only`, which creates nothing. See [Scripts and Scheduled Runs](./pruning.md#scripts-and-scheduled-runs) for pruning without a terminal.
+
+**`--list` only reads.** It can't be combined with `--prune`, `--prune-only`, `--dry-run`, `--force`, or `--yes`, and it ignores `prune` from config files. See [Listing Bundles](./general_usage.md#listing-bundles).
 
 **`--json` never asks.** With `--json`, a prune that needs confirmation is treated as if there were no terminal, so pass `--yes` to delete. See [JSON Output](./general_usage.md#json-output).
 

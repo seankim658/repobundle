@@ -12,6 +12,7 @@ This guide walks through creating bundles, reading what repobundle prints, and g
   - [Writing a Single File](#writing-a-single-file)
 - [Warnings](#warnings)
 - [Dry Runs](#dry-runs)
+- [Listing Bundles](#listing-bundles)
 - [JSON Output](#json-output)
 - [Errors](#errors)
 - [Using a Bundle](#using-a-bundle)
@@ -219,6 +220,38 @@ repobundle --dry-run
 
 The up-to-date check still runs, so a dry run on an unchanged repo prints `Up to date:` instead. Warnings about the repo are still shown. Combined with pruning, it also lists what would be deleted (see [Pruning](./pruning.md)).
 
+## Listing Bundles
+
+`--list` shows this repo's bundles, newest first, without creating or deleting anything.
+
+```bash
+repobundle --list
+```
+
+```
+[i] 3 bundles of this repo in bundles
+  20261007T150211Z-c71d9e4-myrepo.bundle  149.0 kB  2 hours ago  current
+  20261006T091544Z-1b0e7a2-myrepo.bundle  148.2 kB  1 day ago    out of date
+  20261005T174802Z-9d3f210-myrepo.bundle  147.9 kB  2 days ago   out of date
+```
+
+The last column compares each bundle with the repo, the same way [the up-to-date check](#when-nothing-has-changed) does.
+
+| Status        | Meaning                                                      |
+| ------------- | ------------------------------------------------------------ |
+| `current`     | It holds exactly the refs a new bundle would                 |
+| `out of date` | Some ref has moved since it was made                         |
+| `unreadable`  | Its refs can't be read, so it may be damaged                 |
+
+The age comes from the timestamp in the name, or from the file's modification time when the [name template](./config_file.md#name) has none.
+
+`--list` follows `-o`, `--name`, and `--refs` like any other run, so it lists the same bundles that pruning and the up-to-date check would see. With a [single-file output](#writing-a-single-file), it shows that one file.
+
+```
+[i] 1 bundle at snapshot.bundle
+  snapshot.bundle  149.0 kB  just now  current
+```
+
 ## JSON Output
 
 `--json` prints the result as one JSON object on stdout instead of the usual messages, for scripts and other tools to read.
@@ -259,6 +292,23 @@ Paths are always absolute, wherever you run from.
 | `prune.paths`    | The bundles deleted, or with `would_delete` the ones a real run would delete                    |
 
 Match on a warning's `kind` rather than its message, since messages may be reworded. The kinds are `uncommitted_changes`, `submodules`, `lfs`, `too_large`, `unignored_output`, `unreadable_bundle`, and `prune_skipped`.
+
+With `--list`, the object holds the listing instead.
+
+```json
+{
+  "bundles": [
+    {
+      "path": "/home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle",
+      "size": 149012,
+      "created_at": "2026-10-07T15:02:11Z",
+      "status": "current"
+    }
+  ]
+}
+```
+
+`created_at` is in UTC, and `status` is `current`, `out_of_date`, or `unreadable`.
 
 **It never asks.** A prune that needs confirmation is handled as if there were no terminal (see [Scripts and Scheduled Runs](./pruning.md#scripts-and-scheduled-runs)). Pass `--yes` to delete. A prune from a config file is skipped, with `prune.status` set to `skipped` and a `prune_skipped` warning. A `--prune` or `--prune-only` flag fails the run.
 

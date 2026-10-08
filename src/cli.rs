@@ -60,6 +60,10 @@ pub struct BundleArgs {
     #[arg(long, conflicts_with_all = ["prune", "prune_only"])]
     pub no_prune: bool,
 
+    /// List this repo's bundles, newest first, without creating one.
+    #[arg(long, conflicts_with_all = ["prune", "prune_only", "dry_run", "force", "yes"])]
+    pub list: bool,
+
     /// Report what would be created and deleted without doing either.
     #[arg(long)]
     pub dry_run: bool,
@@ -158,6 +162,17 @@ mod tests {
             parse_error(&["--prune-only", "--force"]),
             ErrorKind::ArgumentConflict
         );
+    }
+
+    #[test]
+    fn rejects_list_with_flags_that_create_or_delete() {
+        for flag in ["--prune", "--prune-only", "--dry-run", "--force", "--yes"] {
+            assert_eq!(
+                parse_error(&["--list", flag]),
+                ErrorKind::ArgumentConflict,
+                "{flag}"
+            );
+        }
     }
 
     #[test]

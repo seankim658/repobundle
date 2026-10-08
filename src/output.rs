@@ -3,11 +3,19 @@ use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use chrono::{DateTime, Utc};
 use colored::{Color, Colorize};
 
 use crate::bundles::BundleFile;
+use crate::create::RefMatch;
+use crate::report::ListedBundle;
+use crate::settings::Output;
 use crate::size::format_size;
 use crate::warnings::Warning;
+
+const SECONDS_PER_MINUTE: i64 = 60;
+const SECONDS_PER_HOUR: i64 = 60 * SECONDS_PER_MINUTE;
+const SECONDS_PER_DAY: i64 = 24 * SECONDS_PER_HOUR;
 
 static STREAM_COLORS: OnceLock<StreamColors> = OnceLock::new();
 static PATH_BASES: OnceLock<PathBases> = OnceLock::new();
@@ -113,6 +121,86 @@ pub fn nothing_deleted() {
 
 pub fn deleted(path: &Path) {
     println!("{} Deleted {}", badge(Badge::Success), display_path(path));
+}
+
+/// Print a heading, then one aligned row per bundle with its name, size, age, and whether it
+/// holds the current refs.
+pub fn listing(output: &Output, bundles: &[ListedBundle]) {
+    let badge = badge(Badge::Info);
+    println!("{badge} {}", listing_heading(output, bundles.len()));
+    let now = Utc::now();
+    let rows: Vec<[String; 4]> = bundles.iter().map(|listed| list_row(listed, now)).collect();
+    for line in aligned(&rows) {
+        println!("  {line}");
+    }
+}
+
+fn listing_heading(output: &Output, count: usize) -> String {
+    match output {
+        Output::Directory(dir) if count == 0 => {
+            format!("No bundles of this repo in {}", display_path(&dir.path))
+        }
+        Output::Directory(dir) => format!(
+            "{} of this repo in {}",
+            count_bundles(count),
+            display_path(&dir.path)
+        ),
+        Output::File(path) if count == 0 => format!("No bundle at {}", display_path(path)),
+        Output::File(path) => format!("{} at {}", count_bundles(count), display_path(path)),
+    }
+}
+
+fn list_row(listed: &ListedBundle, now: DateTime<Utc>) -> [String; 4] {
+    let bundle = &listed.bundle;
+    let name = bundle.path.file_name().unwrap_or(bundle.path.as_os_str());
+    let age = (now - bundle.created()).num_seconds();
+    [
+        name.to_string_lossy().into_owned(),
+        format_size(bundle.size),
+        format_age(age),
+        ref_status(listed.refs).to_string(),
+    ]
+}
+
+/// Pad every column but the last to its widest cell. Right-align sizes, so their units line up.
+fn aligned(rows: &[[String; 4]]) -> Vec<String> {
+    let width = |column: usize| {
+        let cells = rows.iter().map(|row| row[column].chars().count());
+        cells.max().unwrap_or(0)
+    };
+    let (name_width, size_width, age_width) = (width(0), width(1), width(2));
+    rows.iter()
+        .map(|[name, size, age, status]| {
+            format!("{name:<name_width$}  {size:>size_width$}  {age:<age_width$}  {status}")
+        })
+        .collect()
+}
+
+/// Describe an age in the largest whole unit, up to days. Treat a time in the future, from a
+/// clock that moved backward, as just now.
+fn format_age(seconds: i64) -> String {
+    if seconds < SECONDS_PER_MINUTE {
+        return "just now".to_string();
+    }
+    let (count, unit) = if seconds < SECONDS_PER_HOUR {
+        (seconds / SECONDS_PER_MINUTE, "minute")
+    } else if seconds < SECONDS_PER_DAY {
+        (seconds / SECONDS_PER_HOUR, "hour")
+    } else {
+        (seconds / SECONDS_PER_DAY, "day")
+    };
+    if count == 1 {
+        return format!("1 {unit} ago");
+    }
+    format!("{count} {unit}s ago")
+}
+
+fn ref_status(refs: RefMatch) -> &'static str {
+    match refs {
+        RefMatch::Current => "current",
+        RefMatch::OutOfDate => "out of date",
+        RefMatch::Unreadable => "unreadable",
+    }
 }
 
 pub fn error(error: &anyhow::Error) {
@@ -386,6 +474,50 @@ mod tests {
     fn working_directory_itself_is_never_empty() {
         let path = Path::new("/home/me/code/myrepo");
         assert_eq!(bases().shorten(path), "~/code/myrepo");
+    }
+
+    // Listing
+
+    #[test]
+    fn ages_use_the_largest_whole_unit() {
+        assert_eq!(format_age(-5), "just now");
+        assert_eq!(format_age(59), "just now");
+        assert_eq!(format_age(60), "1 minute ago");
+        assert_eq!(format_age(3 * SECONDS_PER_HOUR - 1), "2 hours ago");
+        assert_eq!(format_age(SECONDS_PER_DAY), "1 day ago");
+        assert_eq!(format_age(40 * SECONDS_PER_DAY), "40 days ago");
+    }
+
+    #[test]
+    fn listing_columns_line_up() {
+        let rows = [
+            [
+                "long-name.bundle".to_string(),
+                "1.2 MB".to_string(),
+                "2 hours ago".to_string(),
+                "current".to_string(),
+            ],
+            [
+                "a.bundle".to_string(),
+                "149.0 kB".to_string(),
+                "1 day ago".to_string(),
+                "out of date".to_string(),
+            ],
+        ];
+        assert_eq!(
+            aligned(&rows),
+            [
+                "long-name.bundle    1.2 MB  2 hours ago  current",
+                "a.bundle          149.0 kB  1 day ago    out of date",
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_listings_say_where_they_looked() {
+        let file = Output::File(PathBuf::from("/mnt/x.bundle"));
+        assert_eq!(listing_heading(&file, 0), "No bundle at /mnt/x.bundle");
+        assert_eq!(listing_heading(&file, 1), "1 bundle at /mnt/x.bundle");
     }
 
     // Counts

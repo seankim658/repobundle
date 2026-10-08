@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-use crate::bundles::{BundleDir, BundleFile};
+use crate::bundles::{self, BundleDir, BundleFile};
 use crate::create::{self, RefMatch};
 use crate::git::{Git, RefSet};
 use crate::output;
 use crate::prompt;
 use crate::prune;
-use crate::report::{BundleOutcome, Reporter};
+use crate::report::{BundleOutcome, ListedBundle, Reporter};
 use crate::settings::{Action, Output, PruneLimit, PruneOrigin, Settings};
 use crate::warnings::{self, PromptUnavailable, Warning};
 
@@ -37,6 +37,36 @@ impl<'a> Runner<'a> {
             Action::Create(output) => self.create(output).map(drop),
             Action::CreateAndPrune { dir, limit } => self.create_and_prune(dir, *limit),
             Action::PruneOnly { dir, keep } => self.prune_only(dir, *keep),
+            Action::List(output) => self.list(output),
+        }
+    }
+
+    /// Compare every bundle with the repo's refs, read once for the whole listing.
+    fn list(&mut self, output: &Output) -> Result<()> {
+        let bundles = self.find_bundles(output)?;
+        if bundles.is_empty() {
+            self.reporter.list(output, &[]);
+            return Ok(());
+        }
+        self.git.ensure_has_commits()?;
+        let current = self
+            .git
+            .current_refs(&self.git.ref_set(self.settings.refs)?)?;
+        let listed: Vec<ListedBundle> = bundles
+            .into_iter()
+            .map(|bundle| ListedBundle {
+                refs: create::compare_refs(self.git, &bundle.path, &current),
+                bundle,
+            })
+            .collect();
+        self.reporter.list(output, &listed);
+        Ok(())
+    }
+
+    fn find_bundles(&self, output: &Output) -> Result<Vec<BundleFile>> {
+        match output {
+            Output::Directory(dir) => dir.find(&self.settings.repo_name),
+            Output::File(path) => Ok(bundles::read_file(path)?.into_iter().collect()),
         }
     }
 
@@ -114,7 +144,8 @@ impl<'a> Runner<'a> {
         let Some(previous) = create::previous_bundle(output, &self.settings.repo_name)? else {
             return Ok(None);
         };
-        let ref_match = create::compare_refs(self.git, &previous, refs)?;
+        let current = self.git.current_refs(refs)?;
+        let ref_match = create::compare_refs(self.git, &previous, &current);
         Ok(Some((previous, ref_match)))
     }
 
@@ -206,7 +237,7 @@ mod tests {
     use crate::cli::Cli;
     use crate::config::Defaults;
     use crate::settings::Locations;
-    use crate::test_support::test_repo;
+    use crate::test_support::{run_with_identity, test_repo};
     use clap::Parser;
 
     /// Keep every result instead of printing it.
@@ -214,6 +245,7 @@ mod tests {
     struct Recorder {
         bundles: Vec<BundleOutcome>,
         warnings: Vec<Warning>,
+        listed: Vec<ListedBundle>,
     }
 
     impl Reporter for Recorder {
@@ -232,6 +264,10 @@ mod tests {
         fn deleted(&mut self, _path: &Path) {}
 
         fn nothing_deleted(&mut self) {}
+
+        fn list(&mut self, _output: &Output, bundles: &[ListedBundle]) {
+            self.listed.extend_from_slice(bundles);
+        }
     }
 
     fn settings_for(git: &Git, flags: &[&str]) -> Settings {
@@ -273,6 +309,26 @@ mod tests {
             panic!("expected one created bundle, got {:?}", first.bundles);
         };
         assert_eq!(second.bundles, [BundleOutcome::UpToDate(path.clone())]);
+    }
+
+    #[test]
+    fn list_marks_older_bundles_out_of_date() {
+        let (_dir, git) = test_repo();
+        run_with(&git, &[]);
+        run_with_identity(&git, &["commit", "-q", "--allow-empty", "-m", "second"]);
+        run_with(&git, &[]);
+        let recorder = run_with(&git, &["--list"]);
+
+        let refs: Vec<RefMatch> = recorder.listed.iter().map(|listed| listed.refs).collect();
+        assert_eq!(refs, [RefMatch::Current, RefMatch::OutOfDate]);
+        assert!(recorder.bundles.is_empty(), "{:?}", recorder.bundles);
+    }
+
+    #[test]
+    fn list_of_missing_file_is_empty() {
+        let (_dir, git) = test_repo();
+        let recorder = run_with(&git, &["--list", "-o", "absent.bundle"]);
+        assert!(recorder.listed.is_empty(), "{:?}", recorder.listed);
     }
 
     #[test]

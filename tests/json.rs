@@ -9,16 +9,6 @@ fn parse(stdout: &str) -> Value {
     serde_json::from_str(stdout).unwrap_or_else(|error| panic!("{error}: {stdout}"))
 }
 
-/// Create `count` bundles, one per new commit.
-fn create_bundles(fixture: &Fixture, count: usize) {
-    for index in 0..count {
-        if index > 0 {
-            fixture.commit(&format!("commit {index}"));
-        }
-        fixture.succeed(&[]);
-    }
-}
-
 #[test]
 fn created_bundle_is_reported_with_absolute_path_and_size() {
     let fixture = Fixture::with_commit();
@@ -64,7 +54,7 @@ fn warnings_go_into_the_object_instead_of_stderr() {
 #[test]
 fn config_prune_is_skipped_instead_of_asking() {
     let fixture = Fixture::with_commit();
-    create_bundles(&fixture, 2);
+    fixture.create_bundles(2);
     fixture.write_file(".repobundle.toml", "[defaults]\nprune = 1\n");
     fixture.commit("unbundled");
     let report = parse(&fixture.succeed(&["--json"]));
@@ -83,7 +73,7 @@ fn config_prune_is_skipped_instead_of_asking() {
 #[test]
 fn prune_flag_without_yes_fails() {
     let fixture = Fixture::with_commit();
-    create_bundles(&fixture, 2);
+    fixture.create_bundles(2);
     let output = fixture.fail(&["--json", "--prune-only"]);
 
     assert!(output.contains("`--json` never asks"), "{output}");
@@ -94,7 +84,7 @@ fn prune_flag_without_yes_fails() {
 #[test]
 fn prune_with_yes_lists_the_deleted_bundles() {
     let fixture = Fixture::with_commit();
-    create_bundles(&fixture, 3);
+    fixture.create_bundles(3);
     let report = parse(&fixture.succeed(&["--json", "--prune-only", "--yes"]));
 
     assert!(report["bundle"].is_null(), "{report}");

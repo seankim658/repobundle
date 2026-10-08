@@ -1,14 +1,16 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
+use serde::Serialize;
 use tracing::debug;
 
 use crate::bundles;
 use crate::config::RepoName;
-use crate::git::{Git, RefSet};
+use crate::git::{Git, RefSet, RefTip};
 use crate::naming::{NameTemplate, NameValues};
 use crate::settings::Output;
 
@@ -62,8 +64,9 @@ pub fn previous_bundle(output: &Output, repo: &RepoName) -> Result<Option<PathBu
     }
 }
 
-/// How a previous bundle's refs compare with the refs a new bundle would hold.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a bundle's refs compare with the refs a new bundle would hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RefMatch {
     Current,
     OutOfDate,
@@ -71,19 +74,20 @@ pub enum RefMatch {
     Unreadable,
 }
 
-/// Compare the refs recorded in `bundle` with the refs a new bundle of `refs` would hold.
-pub fn compare_refs(git: &Git, bundle: &Path, refs: &RefSet) -> Result<RefMatch> {
+/// Compare the refs recorded in `bundle` with `current`, the refs a new bundle would hold. Take
+/// them read once by the caller, so comparing many bundles reads the repo only once.
+pub fn compare_refs(git: &Git, bundle: &Path, current: &BTreeSet<RefTip>) -> RefMatch {
     let recorded = match git.bundle_refs(bundle) {
         Ok(recorded) => recorded,
         Err(error) => {
             debug!("can't read the refs of {}: {error:#}", bundle.display());
-            return Ok(RefMatch::Unreadable);
+            return RefMatch::Unreadable;
         }
     };
-    if recorded == git.current_refs(refs)? {
-        return Ok(RefMatch::Current);
+    if &recorded == current {
+        return RefMatch::Current;
     }
-    Ok(RefMatch::OutOfDate)
+    RefMatch::OutOfDate
 }
 
 /// Refuse a name the template's matcher can't read back, since pruning and the skip check
@@ -163,6 +167,10 @@ mod tests {
 
     fn all_refs(git: &Git) -> RefSet {
         refs_of(git, RefSelection::All)
+    }
+
+    fn compare(git: &Git, bundle: &Path, refs: &RefSet) -> RefMatch {
+        compare_refs(git, bundle, &git.current_refs(refs).unwrap())
     }
 
     fn directory(path: PathBuf, name: NameTemplate) -> Output {
@@ -298,10 +306,7 @@ mod tests {
         let refs = all_refs(&git);
         write_bundle(&git, &bundle, &refs).unwrap();
 
-        assert_eq!(
-            compare_refs(&git, &bundle, &refs).unwrap(),
-            RefMatch::Current
-        );
+        assert_eq!(compare(&git, &bundle, &refs), RefMatch::Current);
     }
 
     #[test]
@@ -312,10 +317,7 @@ mod tests {
         write_bundle(&git, &bundle, &refs).unwrap();
         run_with_identity(&git, &["commit", "-q", "--allow-empty", "-m", "second"]);
 
-        assert_eq!(
-            compare_refs(&git, &bundle, &refs).unwrap(),
-            RefMatch::OutOfDate
-        );
+        assert_eq!(compare(&git, &bundle, &refs), RefMatch::OutOfDate);
     }
 
     #[test]
@@ -331,14 +333,8 @@ mod tests {
         write_bundle(&git, &head, &head_only).unwrap();
 
         git.run(["branch", "-f", "feature", "main"]).unwrap();
-        assert_eq!(
-            compare_refs(&git, &all, &every_ref).unwrap(),
-            RefMatch::OutOfDate
-        );
-        assert_eq!(
-            compare_refs(&git, &head, &head_only).unwrap(),
-            RefMatch::Current
-        );
+        assert_eq!(compare(&git, &all, &every_ref), RefMatch::OutOfDate);
+        assert_eq!(compare(&git, &head, &head_only), RefMatch::Current);
     }
 
     #[test]
@@ -348,7 +344,7 @@ mod tests {
         fs::write(&bundle, "not a bundle").unwrap();
 
         assert_eq!(
-            compare_refs(&git, &bundle, &all_refs(&git)).unwrap(),
+            compare(&git, &bundle, &all_refs(&git)),
             RefMatch::Unreadable
         );
     }

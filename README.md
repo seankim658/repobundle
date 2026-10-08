@@ -96,6 +96,7 @@ Options:
       --prune[=<N>]       After creating, keep only the newest N bundles of this repo
       --prune-only[=<N>]  Keep only the newest N bundles of this repo without creating one
       --no-prune          Ignore the `prune` value from config files
+      --list              List this repo's bundles, newest first, without creating one
       --dry-run           Report what would be created and deleted without doing either
       --force             Create even if an identical bundle exists
   -y, --yes               Delete bundles over the prune limit without asking

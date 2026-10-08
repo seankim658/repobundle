@@ -3,8 +3,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
+use chrono::SecondsFormat;
+
 use crate::bundles::BundleFile;
+use crate::create::RefMatch;
 use crate::output;
+use crate::settings::Output;
 use crate::warnings::Warning;
 
 /// What happened to the bundle a create run points to.
@@ -28,6 +32,13 @@ impl BundleOutcome {
     }
 }
 
+/// One bundle in a listing, with how its refs compare to the repo's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedBundle {
+    pub bundle: BundleFile,
+    pub refs: RefMatch,
+}
+
 /// Receive each result of a run as it happens, so text output can show the result line before a
 /// delete prompt, and a failed delete still reports the bundles deleted before it.
 pub trait Reporter {
@@ -37,6 +48,8 @@ pub trait Reporter {
     fn would_delete(&mut self, bundles: &[BundleFile]);
     fn deleted(&mut self, path: &Path);
     fn nothing_deleted(&mut self);
+    /// Show the bundles in `output`, newest first. A listing is the whole result of its run.
+    fn list(&mut self, output: &Output, bundles: &[ListedBundle]);
 
     /// Note that a create left nothing over the prune limit. Text output says nothing here, so a
     /// routine create prints only its result.
@@ -78,15 +91,54 @@ impl Reporter for TextReporter {
     fn nothing_deleted(&mut self) {
         output::nothing_deleted();
     }
+
+    fn list(&mut self, output: &Output, bundles: &[ListedBundle]) {
+        output::listing(output, bundles);
+    }
 }
 
 /// Collect every result into one object, to print once the run succeeds. Paths are absolute, so
 /// a script doesn't need to know where the run started.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default)]
 pub struct JsonReporter {
+    run: JsonRun,
+    /// Present only for `--list`, which prints this instead of `run`.
+    listing: Option<JsonListing>,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct JsonRun {
     bundle: Option<JsonBundle>,
     warnings: Vec<JsonWarning>,
     prune: JsonPrune,
+}
+
+#[derive(Debug, Serialize)]
+struct JsonListing {
+    bundles: Vec<JsonListedBundle>,
+}
+
+#[derive(Debug, Serialize)]
+struct JsonListedBundle {
+    path: PathBuf,
+    size: u64,
+    /// UTC, in RFC 3339 form such as `2026-10-07T15:02:11Z`.
+    created_at: String,
+    status: RefMatch,
+}
+
+impl From<&ListedBundle> for JsonListedBundle {
+    fn from(listed: &ListedBundle) -> Self {
+        Self {
+            path: listed.bundle.path.clone(),
+            size: listed.bundle.size,
+            created_at: listed
+                .bundle
+                .created()
+                .to_rfc3339_opts(SecondsFormat::Secs, true),
+            status: listed.refs,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -133,7 +185,11 @@ enum PruneStatus {
 
 impl JsonReporter {
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self).context("failed to write the result as JSON")
+        let json = match &self.listing {
+            Some(listing) => serde_json::to_string_pretty(listing),
+            None => serde_json::to_string_pretty(&self.run),
+        };
+        json.context("failed to write the result as JSON")
     }
 
     pub fn print(&self) -> Result<()> {
@@ -149,7 +205,7 @@ impl Reporter for JsonReporter {
             BundleOutcome::UpToDate(_) => (BundleStatus::UpToDate, None),
             BundleOutcome::WouldCreate(_) => (BundleStatus::WouldCreate, None),
         };
-        self.bundle = Some(JsonBundle {
+        self.run.bundle = Some(JsonBundle {
             status,
             path: outcome.path().to_path_buf(),
             size,
@@ -157,7 +213,8 @@ impl Reporter for JsonReporter {
     }
 
     fn warnings(&mut self, warnings: &[Warning]) {
-        self.warnings
+        self.run
+            .warnings
             .extend(warnings.iter().map(|warning| JsonWarning {
                 kind: warning.kind(),
                 message: output::capitalize(&warning.to_string()),
@@ -165,29 +222,34 @@ impl Reporter for JsonReporter {
     }
 
     fn nothing_to_prune(&mut self) {
-        self.prune.status = PruneStatus::NothingToPrune;
+        self.run.prune.status = PruneStatus::NothingToPrune;
     }
 
     fn would_delete(&mut self, bundles: &[BundleFile]) {
-        self.prune.status = PruneStatus::WouldDelete;
-        self.prune.paths = bundles.iter().map(|bundle| bundle.path.clone()).collect();
+        self.run.prune.status = PruneStatus::WouldDelete;
+        self.run.prune.paths = bundles.iter().map(|bundle| bundle.path.clone()).collect();
     }
 
     fn deleted(&mut self, path: &Path) {
-        self.prune.status = PruneStatus::Deleted;
-        self.prune.paths.push(path.to_path_buf());
+        self.run.prune.status = PruneStatus::Deleted;
+        self.run.prune.paths.push(path.to_path_buf());
     }
 
     fn nothing_deleted(&mut self) {
-        self.prune.status = PruneStatus::Declined;
+        self.run.prune.status = PruneStatus::Declined;
     }
 
     fn nothing_over_limit(&mut self) {
-        self.prune.status = PruneStatus::NothingToPrune;
+        self.run.prune.status = PruneStatus::NothingToPrune;
     }
 
     fn prune_skipped(&mut self) {
-        self.prune.status = PruneStatus::Skipped;
+        self.run.prune.status = PruneStatus::Skipped;
+    }
+
+    fn list(&mut self, _output: &Output, bundles: &[ListedBundle]) {
+        let bundles = bundles.iter().map(JsonListedBundle::from).collect();
+        self.listing = Some(JsonListing { bundles });
     }
 }
 
@@ -206,6 +268,7 @@ mod tests {
             path: PathBuf::from(path),
             created_at: None,
             modified: UNIX_EPOCH,
+            size: 0,
         }
     }
 
@@ -258,6 +321,26 @@ mod tests {
 
         let expected = json!({ "status": "deleted", "paths": ["/out/b.bundle", "/out/a.bundle"] });
         assert_eq!(parsed(&reporter)["prune"], expected);
+    }
+
+    #[test]
+    fn listing_replaces_the_run_object() {
+        let mut reporter = JsonReporter::default();
+        let listed = ListedBundle {
+            bundle: bundle_file("/out/a.bundle"),
+            refs: RefMatch::OutOfDate,
+        };
+        reporter.list(&Output::File(PathBuf::from("/out/a.bundle")), &[listed]);
+
+        let expected = json!({
+            "bundles": [{
+                "path": "/out/a.bundle",
+                "size": 0,
+                "created_at": "1970-01-01T00:00:00Z",
+                "status": "out_of_date"
+            }]
+        });
+        assert_eq!(parsed(&reporter), expected);
     }
 
     #[test]

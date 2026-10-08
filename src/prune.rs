@@ -40,6 +40,7 @@ mod tests {
             path: Path::new(DIR).join(name),
             created_at: None,
             modified: UNIX_EPOCH,
+            size: 0,
         }
     }
 

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::fs::{self, DirEntry, ReadDir};
+use std::fs::{self, DirEntry, Metadata, ReadDir};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -17,6 +17,16 @@ pub struct BundleFile {
     /// Present only when the template contains `{timestamp}`.
     pub created_at: Option<DateTime<Utc>>,
     pub modified: SystemTime,
+    pub size: u64,
+}
+
+impl BundleFile {
+    /// Return when the bundle was made, from its name when that holds a timestamp, or else from
+    /// its modification time.
+    pub fn created(&self) -> DateTime<Utc> {
+        self.created_at
+            .unwrap_or_else(|| DateTime::from(self.modified))
+    }
 }
 
 /// Return the files in `dir` that `matcher` accepts, newest first. A missing directory has no
@@ -68,6 +78,22 @@ fn read_dir_if_exists(dir: &Path) -> Result<Option<ReadDir>> {
     }
 }
 
+/// Return the bundle at `path` when it's a regular file. Accept any name, since a file output is
+/// a path the user chose rather than one rendered from a template.
+pub fn read_file(path: &Path) -> Result<Option<BundleFile>> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to read {}", path.display()));
+        }
+    };
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+    Ok(Some(bundle_file(path.to_path_buf(), None, &metadata)?))
+}
+
 /// Skip anything the matcher rejects or that isn't a regular file, so no caller ever reads,
 /// compares, or deletes it. Symlinks are skipped too.
 fn read_bundle(entry: &DirEntry, matcher: &BundleNameMatcher) -> Result<Option<BundleFile>> {
@@ -82,14 +108,23 @@ fn read_bundle(entry: &DirEntry, matcher: &BundleNameMatcher) -> Result<Option<B
     if !metadata.is_file() {
         return Ok(None);
     }
+    Ok(Some(bundle_file(path, parsed.created_at, &metadata)?))
+}
+
+fn bundle_file(
+    path: PathBuf,
+    created_at: Option<DateTime<Utc>>,
+    metadata: &Metadata,
+) -> Result<BundleFile> {
     let modified = metadata
         .modified()
         .with_context(|| format!("failed to read the modification time of {}", path.display()))?;
-    Ok(Some(BundleFile {
+    Ok(BundleFile {
         path,
-        created_at: parsed.created_at,
+        created_at,
         modified,
-    }))
+        size: metadata.len(),
+    })
 }
 
 fn newest_first(left: &BundleFile, right: &BundleFile) -> Ordering {
@@ -202,6 +237,39 @@ mod tests {
                 "20261004T153012Z-a1b2c3d-myrepo.bundle",
             ]
         );
+    }
+
+    #[test]
+    fn found_bundles_carry_their_size() {
+        let dir = TempDir::new().unwrap();
+        let name = "20261004T153012Z-a1b2c3d-myrepo.bundle";
+        fs::write(dir.path().join(name), "12345").unwrap();
+
+        let bundles = find(dir.path(), &matcher(DEFAULT_TEMPLATE)).unwrap();
+        assert_eq!(bundles[0].size, 5);
+    }
+
+    #[test]
+    fn read_file_accepts_any_name_and_skips_what_is_missing() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("snapshot.bundle");
+        assert_eq!(read_file(&file).unwrap(), None);
+
+        fs::write(&file, "123").unwrap();
+        let bundle = read_file(&file).unwrap().unwrap();
+        assert_eq!(bundle.size, 3);
+        assert_eq!(bundle.created_at, None);
+        assert_eq!(read_file(dir.path()).unwrap(), None);
+    }
+
+    #[test]
+    fn created_time_falls_back_to_modification_time() {
+        let dir = TempDir::new().unwrap();
+        touch(dir.path(), "20261004-main@myrepo.bundle", 100);
+
+        let bundles = find(dir.path(), &matcher(NO_TIMESTAMP_TEMPLATE)).unwrap();
+        let expected = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_secs(100));
+        assert_eq!(bundles[0].created(), expected);
     }
 
     #[test]
