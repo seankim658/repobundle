@@ -107,7 +107,7 @@ impl fmt::Display for Warning {
 /// uncommitted changes, since the unignored-output warning already covers it.
 pub fn repo_warnings(git: &Git, output: &Output) -> Result<Vec<Warning>> {
     let mut warnings = Vec::new();
-    let output_path = output_in_repo(output, git.repo_dir())?;
+    let output_path = output_in_repo(output, git)?;
     let changes = git.status_lines(output_path.as_deref())?;
     if !changes.is_empty() {
         warnings.push(Warning::UncommittedChanges(changes));
@@ -136,36 +136,33 @@ pub fn size_warning(bundle: &Path, limit_mb: NonZeroU64) -> Result<Option<Warnin
 }
 
 /// Warn when the output sits inside the repo where git doesn't ignore it.
-pub fn unignored_output(git: &Git, output: &Output) -> Result<Option<Warning>> {
-    let Some(path) = output_in_repo(output, git.repo_dir())? else {
+pub fn unignored_output(git: &Git, output: &Output, bundle: &Path) -> Result<Option<Warning>> {
+    let Some(path) = output_in_repo(output, git)? else {
         return Ok(None);
     };
-    if git.is_ignored(&path)? {
+    if git.is_ignored(&ignore_probe(output, &path, bundle))? {
         return Ok(None);
     }
     Ok(Some(Warning::UnignoredOutput(path)))
 }
 
+/// Return the repo-relative path whose ignore status decides the warning. For a directory that's
+/// the bundle inside it, since a `.gitignore` in the directory ignores its files but not the
+/// directory itself.
+fn ignore_probe(output: &Output, output_path: &Path, bundle: &Path) -> PathBuf {
+    match (output, bundle.file_name()) {
+        (Output::Directory(_), Some(name)) => output_path.join(name),
+        _ => output_path.to_path_buf(),
+    }
+}
+
 /// Return the output's path relative to the repo root when it exists strictly inside the repo.
-/// Resolve both paths first, so `..` and symlinks can't make an outside path look inside.
-fn output_in_repo(output: &Output, repo_root: &Path) -> Result<Option<PathBuf>> {
+fn output_in_repo(output: &Output, git: &Git) -> Result<Option<PathBuf>> {
     let target = match output {
         Output::Directory(dir) => &dir.path,
         Output::File(path) => path,
     };
-    if !target.exists() {
-        return Ok(None);
-    }
-    let target = canonicalize(target)?;
-    let root = canonicalize(repo_root)?;
-    match target.strip_prefix(&root) {
-        Ok(relative) if !relative.as_os_str().is_empty() => Ok(Some(relative.to_path_buf())),
-        _ => Ok(None),
-    }
-}
-
-fn canonicalize(path: &Path) -> Result<PathBuf> {
-    fs::canonicalize(path).with_context(|| format!("failed to resolve {}", path.display()))
+    git.path_in_repo(target)
 }
 
 fn write_changes(formatter: &mut fmt::Formatter<'_>, changes: &[String]) -> fmt::Result {
@@ -302,26 +299,37 @@ mod tests {
 
     // Unignored output
 
+    fn unignored_in_default_dir(repo: &Path) -> Option<Warning> {
+        let (git, output) = (Git::new(repo), default_output(repo));
+        let bundle = repo.join("bundles/a.bundle");
+        unignored_output(&git, &output, &bundle).unwrap()
+    }
+
     #[test]
     fn unignored_output_directory_is_reported() {
-        let (dir, git) = test_repo();
+        let (dir, _git) = test_repo();
         fs::create_dir(dir.path().join("bundles")).unwrap();
 
         let expected = Warning::UnignoredOutput(PathBuf::from("bundles"));
-        let warning = unignored_output(&git, &default_output(dir.path())).unwrap();
-        assert_eq!(warning, Some(expected));
+        assert_eq!(unignored_in_default_dir(dir.path()), Some(expected));
     }
 
     #[test]
     fn ignored_output_directory_is_not_reported() {
-        let (dir, git) = test_repo();
+        let (dir, _git) = test_repo();
         fs::write(dir.path().join(".gitignore"), "/bundles/\n").unwrap();
         fs::create_dir(dir.path().join("bundles")).unwrap();
 
-        assert_eq!(
-            unignored_output(&git, &default_output(dir.path())).unwrap(),
-            None
-        );
+        assert_eq!(unignored_in_default_dir(dir.path()), None);
+    }
+
+    #[test]
+    fn directory_that_ignores_its_own_files_is_not_reported() {
+        let (dir, _git) = test_repo();
+        fs::create_dir(dir.path().join("bundles")).unwrap();
+        fs::write(dir.path().join("bundles/.gitignore"), "*\n").unwrap();
+
+        assert_eq!(unignored_in_default_dir(dir.path()), None);
     }
 
     #[test]
@@ -332,18 +340,15 @@ mod tests {
 
         let expected = Warning::UnignoredOutput(PathBuf::from("snapshot.bundle"));
         assert_eq!(
-            unignored_output(&git, &Output::File(file)).unwrap(),
+            unignored_output(&git, &Output::File(file.clone()), &file).unwrap(),
             Some(expected)
         );
     }
 
     #[test]
     fn missing_output_is_not_reported() {
-        let (dir, git) = test_repo();
-        assert_eq!(
-            unignored_output(&git, &default_output(dir.path())).unwrap(),
-            None
-        );
+        let (dir, _git) = test_repo();
+        assert_eq!(unignored_in_default_dir(dir.path()), None);
     }
 
     #[test]
@@ -355,15 +360,17 @@ mod tests {
             .join("..")
             .join(sibling.path().file_name().unwrap());
 
+        let bundle = through_parent.join("a.bundle");
         let output = directory_output(through_parent);
-        assert_eq!(unignored_output(&git, &output).unwrap(), None);
+        assert_eq!(unignored_output(&git, &output, &bundle).unwrap(), None);
     }
 
     #[test]
     fn repo_root_as_output_is_not_reported() {
         let (dir, git) = test_repo();
         let output = directory_output(dir.path().to_path_buf());
-        assert_eq!(unignored_output(&git, &output).unwrap(), None);
+        let bundle = dir.path().join("a.bundle");
+        assert_eq!(unignored_output(&git, &output, &bundle).unwrap(), None);
     }
 
     // Messages

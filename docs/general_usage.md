@@ -125,7 +125,7 @@ repobundle -o ~/bundles
 
 The directory is created if it doesn't exist.
 
-**Inside the repo.** If the output directory is inside the repo, add it to `.gitignore` or `.git/info/exclude`. Otherwise git lists your bundles as untracked files and repobundle [warns](#warnings) about it every run.
+**Inside the repo.** When repobundle creates the output directory inside the repo, it also writes a `.gitignore` there that ignores everything in the directory. Git never lists your bundles as untracked, and pruning leaves the `.gitignore` alone. A directory that already exists is left as it is, since it may hold files you want tracked. If git doesn't ignore an existing directory, repobundle [warns](#warnings) about it every run.
 
 ### Writing a Single File
 
@@ -194,7 +194,7 @@ Commit or stash them first if they should be included.
 [!] The output bundles is inside the repo but not ignored, so git lists it as untracked; add it to .gitignore or .git/info/exclude
 ```
 
-`.git/info/exclude` works like `.gitignore` but is never committed, so it keeps the rule to your own clone.
+This only happens when the bundle goes into a directory that already existed, such as the repo root with a [single-file output](#writing-a-single-file), since repobundle only adds a `.gitignore` to a directory it creates. To fix it, ignore the output yourself. `.git/info/exclude` works like `.gitignore` but is never committed, so it keeps the rule to your own clone.
 
 ```bash
 echo "/bundles/" >> .git/info/exclude

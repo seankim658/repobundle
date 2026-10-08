@@ -52,9 +52,19 @@ fn prune_only_does_not_check_the_repo() {
 }
 
 #[test]
+fn new_output_directory_ignores_itself() {
+    let fixture = Fixture::with_commit();
+    let stderr = fixture.succeed_with_stderr(&[]);
+
+    assert!(stderr.is_empty(), "{stderr}");
+    assert!(fixture.default_output_dir().join(".gitignore").is_file());
+    assert!(fixture.git.status_lines(None).unwrap().is_empty());
+}
+
+#[test]
 fn unignored_output_is_reported_but_not_as_a_change() {
     let fixture = Fixture::with_commit();
-    fixture.succeed(&[]);
+    fs::create_dir(fixture.default_output_dir()).unwrap();
     let stderr = fixture.succeed_with_stderr(&[]);
 
     assert!(stderr.contains("not ignored"), "{stderr}");

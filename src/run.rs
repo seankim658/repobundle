@@ -108,7 +108,7 @@ impl<'a> Runner<'a> {
         if let Some(limit_mb) = self.settings.max_size_mb {
             found.extend(warnings::size_warning(bundle, limit_mb)?);
         }
-        found.extend(warnings::unignored_output(self.git, output)?);
+        found.extend(warnings::unignored_output(self.git, output, bundle)?);
         Ok(found)
     }
 

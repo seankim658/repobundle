@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -206,6 +207,20 @@ impl Git {
         ])
     }
 
+    /// Return `path` relative to the repo root when it exists strictly inside the repo. Resolve
+    /// both paths first, so `..` and symlinks can't make an outside path look inside.
+    pub fn path_in_repo(&self, path: &Path) -> Result<Option<PathBuf>> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        let target = canonicalize(path)?;
+        let root = canonicalize(&self.repo_dir)?;
+        match target.strip_prefix(&root) {
+            Ok(relative) if !relative.as_os_str().is_empty() => Ok(Some(relative.to_path_buf())),
+            _ => Ok(None),
+        }
+    }
+
     pub fn create_bundle(&self, bundle: &Path, refs: &RefSet) -> Result<()> {
         assert_absolute(bundle);
         let mut args: Vec<OsString> = vec!["bundle".into(), "create".into(), bundle.into()];
@@ -294,6 +309,10 @@ fn describe(args: &[OsString]) -> String {
     parts.join(" ")
 }
 
+fn canonicalize(path: &Path) -> Result<PathBuf> {
+    fs::canonicalize(path).with_context(|| format!("failed to resolve {}", path.display()))
+}
+
 /// Catch relative bundle paths as a bug in the caller.
 fn assert_absolute(bundle: &Path) {
     assert!(
@@ -331,7 +350,6 @@ fn parse_ref_line(line: &str) -> Result<RefTip> {
 mod tests {
     use super::*;
     use crate::test_support::{empty_repo, run_with_identity, test_repo};
-    use std::fs;
     use tempfile::TempDir;
 
     fn repo_with_every_ref_kind() -> (TempDir, Git) {

@@ -15,6 +15,9 @@ use crate::naming::{NameTemplate, NameValues};
 use crate::settings::Output;
 
 const TEMP_SUFFIX: &str = ".tmp";
+const IGNORE_FILE: &str = ".gitignore";
+/// Ignore everything in the directory, this file included.
+const IGNORE_ALL: &str = "# Created by repobundle so git ignores the bundles here.\n*\n";
 
 /// Check that the repo can be bundled and return where the new bundle goes. A directory output
 /// gets a fresh name stamped with the current time.
@@ -39,7 +42,7 @@ pub fn bundle_path(git: &Git, output: &Output, repo: &RepoName, refs: &RefSet) -
 /// name first, so a failed create or verify never replaces an existing bundle at `path`.
 pub fn write_bundle(git: &Git, path: &Path, refs: &RefSet) -> Result<u64> {
     let temp = temp_path(path)?;
-    create_parent_dir(path)?;
+    create_parent_dir(git, path)?;
     if let Err(error) = create_and_verify(git, &temp, refs) {
         return Err(discard(&temp, error));
     }
@@ -111,12 +114,32 @@ fn temp_path(path: &Path) -> Result<PathBuf> {
     Ok(path.with_file_name(name))
 }
 
-fn create_parent_dir(path: &Path) -> Result<()> {
+/// Give a directory this creates inside the repo a `.gitignore` that ignores everything in it,
+/// so git never lists the bundles as untracked. Leave an existing directory alone, since it may
+/// hold files the user wants tracked.
+fn create_parent_dir(git: &Git, path: &Path) -> Result<()> {
     let dir = path
         .parent()
         .with_context(|| format!("bundle path {} has no parent directory", path.display()))?;
-    fs::create_dir_all(dir)
-        .with_context(|| format!("failed to create output directory {}", dir.display()))
+    if !create_dir(dir)? || git.path_in_repo(dir)?.is_none() {
+        return Ok(());
+    }
+    let ignore_file = dir.join(IGNORE_FILE);
+    fs::write(&ignore_file, IGNORE_ALL)
+        .with_context(|| format!("failed to write {}", ignore_file.display()))
+}
+
+/// Create `dir` and any missing parents. Return whether `dir` itself was new.
+fn create_dir(dir: &Path) -> Result<bool> {
+    let context = || format!("failed to create output directory {}", dir.display());
+    if let Some(parent) = dir.parent() {
+        fs::create_dir_all(parent).with_context(context)?;
+    }
+    match fs::create_dir(dir) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error).with_context(context),
+    }
 }
 
 fn create_and_verify(git: &Git, bundle: &Path, refs: &RefSet) -> Result<()> {
@@ -242,6 +265,37 @@ mod tests {
         assert_eq!(size, fs::metadata(&path).unwrap().len());
         assert!(git.verify_bundle(&path).is_ok());
         assert!(!temp_path(&path).unwrap().exists());
+    }
+
+    #[test]
+    fn new_directory_inside_the_repo_ignores_itself() {
+        let (dir, git) = test_repo();
+        let path = dir.path().join("a/bundles/repo.bundle");
+
+        write_bundle(&git, &path, &all_refs(&git)).unwrap();
+        assert!(dir.path().join("a/bundles/.gitignore").is_file());
+        assert!(!dir.path().join("a/.gitignore").exists());
+        assert!(git.status_lines(None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn existing_directory_gets_no_ignore_file() {
+        let (dir, git) = test_repo();
+        fs::create_dir(dir.path().join("bundles")).unwrap();
+        let path = dir.path().join("bundles/repo.bundle");
+
+        write_bundle(&git, &path, &all_refs(&git)).unwrap();
+        assert!(!dir.path().join("bundles/.gitignore").exists());
+    }
+
+    #[test]
+    fn new_directory_outside_the_repo_gets_no_ignore_file() {
+        let (_dir, git) = test_repo();
+        let outside = TempDir::new().unwrap();
+        let path = outside.path().join("bundles/repo.bundle");
+
+        write_bundle(&git, &path, &all_refs(&git)).unwrap();
+        assert!(!outside.path().join("bundles/.gitignore").exists());
     }
 
     #[test]

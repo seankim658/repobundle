@@ -1,6 +1,7 @@
 // Each test crate uses a different subset of these helpers.
 #![allow(dead_code)]
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -84,14 +85,18 @@ impl Fixture {
         self.repo_dir().join(DEFAULT_OUTPUT_DIR)
     }
 
-    /// Return the files in the default output directory, or none if it doesn't exist.
+    /// Return the bundles in the default output directory, or none if it doesn't exist. Leave out
+    /// the `.gitignore` that repobundle writes there.
     pub fn default_bundles(&self) -> Vec<PathBuf> {
         let dir = self.default_output_dir();
         if !dir.exists() {
             return Vec::new();
         }
         let entries = fs::read_dir(&dir).unwrap();
-        entries.map(|entry| entry.unwrap().path()).collect()
+        let paths = entries.map(|entry| entry.unwrap().path());
+        paths
+            .filter(|path| path.extension() == Some(OsStr::new("bundle")))
+            .collect()
     }
 
     /// Run repobundle in the repo and return its stdout, panicking with its stderr on failure.

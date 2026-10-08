@@ -92,7 +92,7 @@ output = "~/bundles"
 
 **Sharing a directory between repos.** Bundles are matched to a repo by name, so two repos with the same directory name that share an output directory see each other's bundles. Pruning one can delete the other's. If you point the global `output` at a shared directory, set `repo_name` in the project file of any repo whose name isn't unique.
 
-**Output inside the repo.** If the output is inside the repo and git doesn't ignore it, every run warns that git lists it as untracked. Add it to `.gitignore`, or to `.git/info/exclude` to keep the rule local.
+**Output inside the repo.** A directory repobundle creates inside the repo gets a `.gitignore` of its own, so git ignores the bundles in it. A directory that already existed doesn't, and every run warns that git lists it as untracked until you add it to `.gitignore`, or to `.git/info/exclude` to keep the rule local.
 
 ```bash
 echo "/bundles/" >> .git/info/exclude
