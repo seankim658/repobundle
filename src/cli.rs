@@ -1,7 +1,8 @@
+use std::io::Write;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
 use crate::git::RefSelection;
@@ -97,10 +98,17 @@ pub struct BundleArgs {
     pub verbose: bool,
 }
 
+/// Write the completion script for `shell`. The committed scripts in `completions/` come from
+/// here too, so a test can check they match the current flags.
+pub fn write_completion(shell: Shell, out: &mut dyn Write) {
+    let mut command = Cli::command();
+    let name = command.get_name().to_string();
+    clap_complete::generate(shell, &mut command, name, out);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::CommandFactory;
     use clap::error::ErrorKind;
 
     fn try_parse(args: &[&str]) -> Result<Cli, clap::Error> {

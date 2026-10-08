@@ -10,6 +10,7 @@ A bundle is a normal git file format. Anyone with git can clone from it like a r
   - [Quick Start](#quick-start)
   - [Arguments](#arguments)
 - [Configuration](#configuration)
+- [License](#license)
 - [Usage Guides](./docs/README.md)
 
 ---
@@ -115,3 +116,7 @@ repobundle reads optional defaults from `~/.repobundle.toml` and from a `.repobu
 prune = 3
 max_size_mb = 30
 ```
+
+## License
+
+repobundle is released under the [MIT License](./LICENSE).

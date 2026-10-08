@@ -2,6 +2,11 @@
 name = "repobundle"
 version = "0.1.0"
 edition = "2024"
+description = "Create, verify, and prune git bundles of a repository"
+license = "MIT"
+repository = "https://github.com/seankim658/repobundle"
+readme = "README.md"
+publish = false
 
 [dependencies]
 anyhow = "1.0.104"

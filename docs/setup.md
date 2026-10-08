@@ -78,7 +78,9 @@ repobundle --version
 
 ## Setting up Shell Completions
 
-repobundle can generate completion scripts for Bash, Zsh, Fish, PowerShell, and Elvish. The script is printed to stdout.
+Ready-made completion scripts for Bash, Zsh, Fish, PowerShell, and Elvish are in the [`completions/`](../completions) directory of the repo. They match the flags of the version you checked out, so you can copy one into place in the locations below instead of generating it.
+
+repobundle can also generate the scripts itself. The script is printed to stdout.
 
 ```bash
 repobundle completion <shell> > repobundle-completion.<shell>

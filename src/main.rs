@@ -3,11 +3,11 @@ use std::io;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use clap_complete::Shell;
 use tracing::debug;
 
-use repobundle::cli::{BundleArgs, Cli, Command};
+use repobundle::cli::{self, BundleArgs, Cli, Command};
 use repobundle::config;
 use repobundle::git::{self, Git};
 use repobundle::logging;
@@ -64,7 +64,5 @@ fn load_settings(args: &BundleArgs, git: &Git) -> Result<Settings> {
 }
 
 fn print_completion(shell: Shell) {
-    let mut command = Cli::command();
-    let name = command.get_name().to_string();
-    clap_complete::generate(shell, &mut command, name, &mut io::stdout());
+    cli::write_completion(shell, &mut io::stdout());
 }
