@@ -94,6 +94,7 @@ Options:
       --list              List this repo's bundles, newest first, without creating one
       --dry-run           Report what would be created and deleted without doing either
       --force             Create even if an identical bundle exists
+      --include-wip       Bundle uncommitted changes to tracked files as refs/wip/repobundle
   -y, --yes               Delete bundles over the prune limit without asking
       --no-warnings       Suppress all warnings
       --no-spinner        Don't show a spinner while the bundle is written

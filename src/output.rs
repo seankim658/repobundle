@@ -107,6 +107,13 @@ pub fn writing_spinner(path: &Path) -> Spinner {
     Spinner(Some(bar))
 }
 
+pub fn no_wip() {
+    println!(
+        "{} No changes to tracked files, so the bundle has no WIP ref",
+        badge(Badge::Info)
+    );
+}
+
 pub fn would_create(path: &Path) {
     println!("{} Would create {}", badge(Badge::Info), display_path(path));
 }

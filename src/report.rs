@@ -42,6 +42,8 @@ pub struct ListedBundle {
 /// Receive each result of a run as it happens, so text output can show the result line before a
 /// delete prompt, and a failed delete still reports the bundles deleted before it.
 pub trait Reporter {
+    /// Note whether `--include-wip` found changes to bundle. Only called when it was passed.
+    fn wip(&mut self, included: bool);
     fn bundle(&mut self, outcome: &BundleOutcome);
     fn warnings(&mut self, warnings: &[Warning]);
     fn nothing_to_prune(&mut self);
@@ -78,6 +80,13 @@ impl TextReporter {
 }
 
 impl Reporter for TextReporter {
+    /// Say so only when nothing was included, since the bundle then isn't what the flag asked for.
+    fn wip(&mut self, included: bool) {
+        if !included {
+            output::no_wip();
+        }
+    }
+
     fn bundle(&mut self, outcome: &BundleOutcome) {
         match outcome {
             BundleOutcome::Created { path, size } => output::created(path, *size),
@@ -123,6 +132,8 @@ impl Reporter for TextReporter {
 #[derive(Debug, Default)]
 pub struct JsonReporter {
     run: JsonRun,
+    /// Whether the bundle holds a WIP commit, which `bundle` adds to the bundle object.
+    wip: bool,
     /// Present only for `--list`, which prints this instead of `run`.
     listing: Option<JsonListing>,
 }
@@ -168,6 +179,8 @@ struct JsonBundle {
     path: PathBuf,
     /// Present only for a bundle this run wrote.
     size: Option<u64>,
+    /// Whether the bundle holds uncommitted changes under `refs/wip/repobundle`.
+    wip: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -220,6 +233,10 @@ impl JsonReporter {
 }
 
 impl Reporter for JsonReporter {
+    fn wip(&mut self, included: bool) {
+        self.wip = included;
+    }
+
     fn bundle(&mut self, outcome: &BundleOutcome) {
         let (status, size) = match outcome {
             BundleOutcome::Created { size, .. } => (BundleStatus::Created, Some(*size)),
@@ -230,6 +247,7 @@ impl Reporter for JsonReporter {
             status,
             path: outcome.path().to_path_buf(),
             size,
+            wip: self.wip,
         });
     }
 
@@ -311,7 +329,12 @@ mod tests {
             size: 149_000,
         });
 
-        let expected = json!({ "status": "created", "path": "/out/a.bundle", "size": 149_000 });
+        let expected = json!({
+            "status": "created",
+            "path": "/out/a.bundle",
+            "size": 149_000,
+            "wip": false
+        });
         assert_eq!(parsed(&reporter)["bundle"], expected);
     }
 
@@ -320,8 +343,22 @@ mod tests {
         let mut reporter = JsonReporter::default();
         reporter.bundle(&BundleOutcome::UpToDate(PathBuf::from("/out/a.bundle")));
 
-        let expected = json!({ "status": "up_to_date", "path": "/out/a.bundle", "size": null });
+        let expected = json!({
+            "status": "up_to_date",
+            "path": "/out/a.bundle",
+            "size": null,
+            "wip": false
+        });
         assert_eq!(parsed(&reporter)["bundle"], expected);
+    }
+
+    #[test]
+    fn included_wip_marks_the_bundle() {
+        let mut reporter = JsonReporter::default();
+        reporter.wip(true);
+        reporter.bundle(&BundleOutcome::WouldCreate(PathBuf::from("/out/a.bundle")));
+
+        assert_eq!(parsed(&reporter)["bundle"]["wip"], true);
     }
 
     #[test]

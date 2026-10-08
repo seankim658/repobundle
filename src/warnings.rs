@@ -15,12 +15,17 @@ const SUBMODULES_FILE: &str = ".gitmodules";
 const ATTRIBUTES_FILE: &str = ".gitattributes";
 const LFS_ATTRIBUTE: &str = "filter=lfs";
 const MAX_LISTED_CHANGES: usize = 10;
+/// How `git status --porcelain` starts the line for an untracked path.
+const UNTRACKED_PREFIX: &str = "??";
 
 /// Something the user should know before relying on a bundle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Warning {
     /// Holds the `git status --porcelain` lines for the paths the bundle leaves out.
     UncommittedChanges(Vec<String>),
+    /// Holds the `git status --porcelain` lines for untracked paths, which `--include-wip` can't
+    /// add.
+    UntrackedFiles(Vec<String>),
     Submodules,
     Lfs,
     TooLarge {
@@ -60,6 +65,7 @@ impl Warning {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::UncommittedChanges(_) => "uncommitted_changes",
+            Self::UntrackedFiles(_) => "untracked_files",
             Self::Submodules => "submodules",
             Self::Lfs => "lfs",
             Self::TooLarge { .. } => "too_large",
@@ -73,7 +79,17 @@ impl Warning {
 impl fmt::Display for Warning {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UncommittedChanges(changes) => write_changes(formatter, changes),
+            Self::UncommittedChanges(changes) => {
+                formatter.write_str("uncommitted changes are not in the bundle")?;
+                if changes.iter().any(|change| !is_untracked(change)) {
+                    formatter.write_str("; pass --include-wip to add changes to tracked files")?;
+                }
+                write_changes(formatter, changes)
+            }
+            Self::UntrackedFiles(files) => {
+                formatter.write_str("untracked files are not in the bundle, even with --include-wip")?;
+                write_changes(formatter, files)
+            }
             Self::Submodules => formatter.write_str(
                 "submodule contents are not in the bundle, only the commits each submodule points to",
             ),
@@ -105,13 +121,11 @@ impl fmt::Display for Warning {
 
 /// Return warnings about repo state that a bundle can't capture. Leave the output out of the
 /// uncommitted changes, since the unignored-output warning already covers it.
-pub fn repo_warnings(git: &Git, output: &Output) -> Result<Vec<Warning>> {
+pub fn repo_warnings(git: &Git, output: &Output, include_wip: bool) -> Result<Vec<Warning>> {
     let mut warnings = Vec::new();
     let output_path = output_in_repo(output, git)?;
     let changes = git.status_lines(output_path.as_deref())?;
-    if !changes.is_empty() {
-        warnings.push(Warning::UncommittedChanges(changes));
-    }
+    warnings.extend(changes_warning(changes, include_wip));
     if git.repo_dir().join(SUBMODULES_FILE).is_file() {
         warnings.push(Warning::Submodules);
     }
@@ -165,8 +179,31 @@ fn output_in_repo(output: &Output, git: &Git) -> Result<Option<PathBuf>> {
     git.path_in_repo(target)
 }
 
+/// Warn about every change the bundle leaves out. `--include-wip` bundles the changes to tracked
+/// files, so with it only untracked files are left out.
+fn changes_warning(changes: Vec<String>, include_wip: bool) -> Option<Warning> {
+    if !include_wip {
+        if changes.is_empty() {
+            return None;
+        }
+        return Some(Warning::UncommittedChanges(changes));
+    }
+    let untracked: Vec<String> = changes
+        .into_iter()
+        .filter(|change| is_untracked(change))
+        .collect();
+    if untracked.is_empty() {
+        return None;
+    }
+    Some(Warning::UntrackedFiles(untracked))
+}
+
+fn is_untracked(change: &str) -> bool {
+    change.starts_with(UNTRACKED_PREFIX)
+}
+
+/// List each change on its own line under the message, up to `MAX_LISTED_CHANGES`.
 fn write_changes(formatter: &mut fmt::Formatter<'_>, changes: &[String]) -> fmt::Result {
-    formatter.write_str("uncommitted changes are not in the bundle")?;
     for change in changes.iter().take(MAX_LISTED_CHANGES) {
         write!(formatter, "\n  {change}")?;
     }
@@ -226,7 +263,7 @@ mod tests {
     fn warnings_with_file(name: &str, contents: &str) -> Vec<Warning> {
         let (dir, git) = test_repo();
         fs::write(dir.path().join(name), contents).unwrap();
-        repo_warnings(&git, &default_output(dir.path())).unwrap()
+        repo_warnings(&git, &default_output(dir.path()), false).unwrap()
     }
 
     // Repo state
@@ -234,7 +271,7 @@ mod tests {
     #[test]
     fn clean_repo_has_no_warnings() {
         let (dir, git) = test_repo();
-        let warnings = repo_warnings(&git, &default_output(dir.path())).unwrap();
+        let warnings = repo_warnings(&git, &default_output(dir.path()), false).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
     }
 
@@ -252,7 +289,7 @@ mod tests {
         fs::write(dir.path().join("notes.txt"), "").unwrap();
 
         let expected = Warning::UncommittedChanges(vec!["?? notes.txt".to_string()]);
-        let warnings = repo_warnings(&git, &default_output(dir.path())).unwrap();
+        let warnings = repo_warnings(&git, &default_output(dir.path()), false).unwrap();
         assert_eq!(warnings, [expected]);
     }
 
@@ -388,6 +425,32 @@ mod tests {
         let message = changes(2).to_string();
         assert!(message.contains("?? file1"), "{message}");
         assert!(!message.contains("more"), "{message}");
+    }
+
+    #[test]
+    fn tracked_changes_suggest_include_wip() {
+        let warning = Warning::UncommittedChanges(vec![" M src/main.rs".to_string()]);
+        let message = warning.to_string();
+        assert!(message.contains("--include-wip"), "{message}");
+    }
+
+    #[test]
+    fn untracked_files_alone_do_not_suggest_include_wip() {
+        let message = changes(2).to_string();
+        assert!(!message.contains("--include-wip"), "{message}");
+    }
+
+    #[test]
+    fn include_wip_leaves_only_untracked_files_to_warn_about() {
+        let lines = vec![" M tracked.txt".to_string(), "?? new.txt".to_string()];
+        let expected = Warning::UntrackedFiles(vec!["?? new.txt".to_string()]);
+        assert_eq!(changes_warning(lines, true), Some(expected));
+    }
+
+    #[test]
+    fn include_wip_with_only_tracked_changes_has_no_warning() {
+        let lines = vec![" M tracked.txt".to_string(), "A  staged.txt".to_string()];
+        assert_eq!(changes_warning(lines, true), None);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use tracing::debug;
 
 use crate::bundles;
 use crate::config::RepoName;
-use crate::git::{Git, RefSet, RefTip};
+use crate::git::{Git, RefSet, RefTip, WIP_REF};
 use crate::naming::{NameTemplate, NameValues};
 use crate::settings::Output;
 
@@ -38,9 +38,27 @@ pub fn bundle_path(git: &Git, output: &Output, repo: &RepoName, refs: &RefSet) -
     Ok(dir.path.join(render_name(&dir.name, &values)?))
 }
 
-/// Write a verified bundle to `path` and return its size in bytes. Build it under a temporary
-/// name first, so a failed create or verify never replaces an existing bundle at `path`.
+/// Write a verified bundle to `path` and return its size in bytes. Point `WIP_REF` at the WIP
+/// commit, if `refs` has one, only while the bundle is written, so the repo never keeps it.
 pub fn write_bundle(git: &Git, path: &Path, refs: &RefSet) -> Result<u64> {
+    let Some(commit) = refs.wip() else {
+        return write_verified(git, path, refs);
+    };
+    git.set_ref(WIP_REF, commit)?;
+    let written = write_verified(git, path, refs);
+    let removed = git
+        .delete_ref(WIP_REF)
+        .with_context(|| format!("failed to delete the temporary ref {WIP_REF}"));
+    match (written, removed) {
+        (Ok(size), Ok(())) => Ok(size),
+        (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(removal)) => Err(error.context(format!("{removal:#}"))),
+    }
+}
+
+/// Build the bundle under a temporary name first, so a failed create or verify never replaces
+/// an existing bundle at `path`.
+fn write_verified(git: &Git, path: &Path, refs: &RefSet) -> Result<u64> {
     let temp = temp_path(path)?;
     create_parent_dir(git, path)?;
     if let Err(error) = create_and_verify(git, &temp, refs) {
@@ -296,6 +314,47 @@ mod tests {
 
         write_bundle(&git, &path, &all_refs(&git)).unwrap();
         assert!(!outside.path().join("bundles/.gitignore").exists());
+    }
+
+    fn ref_exists(git: &Git, name: &str) -> bool {
+        git.run(["rev-parse", "--verify", "--quiet", name]).is_ok()
+    }
+
+    fn refs_with_wip_change(dir: &Path, git: &Git) -> RefSet {
+        fs::write(dir.join("tracked.txt"), "v1").unwrap();
+        git.run(["add", "tracked.txt"]).unwrap();
+        run_with_identity(git, &["commit", "-q", "-m", "add"]);
+        fs::write(dir.join("tracked.txt"), "v2").unwrap();
+        let commit = git.stash_create().unwrap().unwrap();
+        all_refs(git).with_wip(commit)
+    }
+
+    #[test]
+    fn wip_commit_is_bundled_and_its_ref_removed() {
+        let (dir, git) = test_repo();
+        let refs = refs_with_wip_change(dir.path(), &git);
+        let path = dir.path().join("wip.bundle");
+
+        write_bundle(&git, &path, &refs).unwrap();
+        let names: Vec<String> = git
+            .bundle_refs(&path)
+            .unwrap()
+            .into_iter()
+            .map(|tip| tip.name)
+            .collect();
+        assert!(names.contains(&WIP_REF.to_string()), "{names:?}");
+        assert!(!ref_exists(&git, WIP_REF));
+    }
+
+    #[test]
+    fn failed_write_still_removes_the_wip_ref() {
+        let (dir, git) = test_repo();
+        let refs = refs_with_wip_change(dir.path(), &git);
+        fs::write(dir.path().join("blocker"), "").unwrap();
+        let path = dir.path().join("blocker/wip.bundle");
+
+        assert!(write_bundle(&git, &path, &refs).is_err());
+        assert!(!ref_exists(&git, WIP_REF));
     }
 
     #[test]

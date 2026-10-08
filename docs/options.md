@@ -23,6 +23,7 @@ Options:
       --list              List this repo's bundles, newest first, without creating one
       --dry-run           Report what would be created and deleted without doing either
       --force             Create even if an identical bundle exists
+      --include-wip       Bundle uncommitted changes to tracked files as refs/wip/repobundle
   -y, --yes               Delete bundles over the prune limit without asking
       --no-warnings       Suppress all warnings
       --no-spinner        Don't show a spinner while the bundle is written
@@ -45,6 +46,8 @@ Options:
 **`--list` only reads.** It can't be combined with `--prune`, `--prune-only`, `--dry-run`, `--force`, or `--yes`, and it ignores `prune` from config files. See [Listing Bundles](./general_usage.md#listing-bundles).
 
 **`--json` never asks.** With `--json`, a prune that needs confirmation is treated as if there were no terminal, so pass `--yes` to delete. See [JSON Output](./general_usage.md#json-output).
+
+**`--include-wip` always makes a new bundle.** The WIP commit is new every run, so the up-to-date check is skipped whenever there are changes to include. It can't be combined with `--prune-only` or `--list`, which create nothing. See [Including Uncommitted Work](./general_usage.md#including-uncommitted-work).
 
 **`--dry-run` wins.** With `--dry-run`, nothing is written or deleted, even alongside `--force` or `--yes`.
 

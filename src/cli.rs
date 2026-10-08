@@ -72,6 +72,10 @@ pub struct BundleArgs {
     #[arg(long, conflicts_with = "prune_only")]
     pub force: bool,
 
+    /// Bundle uncommitted changes to tracked files as refs/wip/repobundle.
+    #[arg(long, conflicts_with_all = ["prune_only", "list"])]
+    pub include_wip: bool,
+
     /// Delete bundles over the prune limit without asking.
     #[arg(short, long)]
     pub yes: bool,
@@ -173,6 +177,17 @@ mod tests {
         for flag in ["--prune", "--prune-only", "--dry-run", "--force", "--yes"] {
             assert_eq!(
                 parse_error(&["--list", flag]),
+                ErrorKind::ArgumentConflict,
+                "{flag}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_include_wip_without_a_create() {
+        for flag in ["--prune-only", "--list"] {
+            assert_eq!(
+                parse_error(&["--include-wip", flag]),
                 ErrorKind::ArgumentConflict,
                 "{flag}"
             );

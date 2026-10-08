@@ -14,6 +14,8 @@ use tracing::debug;
 
 const GIT: &str = "git";
 const HEAD: &str = "HEAD";
+/// Where `--include-wip` puts the commit of uncommitted changes while the bundle is written.
+pub const WIP_REF: &str = "refs/wip/repobundle";
 const REF_FORMAT: &str = "--format=%(objectname) %(refname)";
 
 /// Fail with a clear message when the `git` binary can't be run.
@@ -127,6 +129,8 @@ pub struct RefSet {
     scope: RefScope,
     /// The checked-out branch's short name, or `None` on a detached HEAD.
     branch: Option<String>,
+    /// The commit of uncommitted changes to bundle under `WIP_REF`, if any.
+    wip: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,25 +145,45 @@ impl RefSet {
         self.branch.as_deref()
     }
 
+    /// Bundle `commit` under `WIP_REF` as well. The ref must exist while the bundle is written.
+    pub fn with_wip(self, commit: String) -> Self {
+        Self {
+            wip: Some(commit),
+            ..self
+        }
+    }
+
+    pub fn wip(&self) -> Option<&str> {
+        self.wip.as_deref()
+    }
+
     fn bundle_args(&self) -> Vec<String> {
-        match &self.scope {
+        let mut args = match &self.scope {
             RefScope::Selection(selection) => self.selection_args(*selection),
             RefScope::Named(names) => {
                 let mut args = vec![HEAD.to_string()];
                 args.extend(names.iter().cloned());
                 args
             }
-        }
+        };
+        args.extend(self.wip_ref());
+        args
     }
 
     /// Return the `for-each-ref` patterns that list the same refs as `bundle_args`, minus `HEAD`.
     /// A full ref name that exists matches only itself, since git forbids a ref with refs below
     /// it.
     fn ref_patterns(&self) -> Vec<String> {
-        match &self.scope {
+        let mut patterns = match &self.scope {
             RefScope::Selection(selection) => self.selection_patterns(*selection),
             RefScope::Named(names) => names.iter().cloned().collect(),
-        }
+        };
+        patterns.extend(self.wip_ref());
+        patterns
+    }
+
+    fn wip_ref(&self) -> Option<String> {
+        self.wip.as_ref().map(|_| WIP_REF.to_string())
     }
 
     fn selection_args(&self, selection: RefSelection) -> Vec<String> {
@@ -272,7 +296,29 @@ impl Git {
         Ok(RefSet {
             scope,
             branch: self.current_branch()?,
+            wip: None,
         })
+    }
+
+    /// Commit the uncommitted changes to tracked files without touching the working tree, index,
+    /// or stash list. Return `None` when there are none, since `git stash create` then makes no
+    /// commit. Untracked files are never included.
+    pub fn stash_create(&self) -> Result<Option<String>> {
+        let commit = self.run(["stash", "create"])?;
+        if commit.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(commit))
+    }
+
+    pub fn set_ref(&self, name: &str, commit: &str) -> Result<()> {
+        self.run(["update-ref", name, commit])?;
+        Ok(())
+    }
+
+    pub fn delete_ref(&self, name: &str) -> Result<()> {
+        self.run(["update-ref", "-d", name])?;
+        Ok(())
     }
 
     /// Skip `HEAD`, which every bundle holds anyway, so it never turns into the branch it points
@@ -518,6 +564,7 @@ mod tests {
         RefSet {
             scope: RefScope::Selection(selection),
             branch: branch.map(str::to_string),
+            wip: None,
         }
     }
 
@@ -596,6 +643,16 @@ mod tests {
     fn head_selection_bundles_head_and_current_branch() {
         let refs = fixed_refs(RefSelection::Head, Some("main"));
         assert_eq!(refs.bundle_args(), ["HEAD", "refs/heads/main"]);
+    }
+
+    #[test]
+    fn wip_adds_its_ref_to_the_bundle() {
+        let refs = fixed_refs(RefSelection::Branches, Some("main")).with_wip("abc".to_string());
+        assert_eq!(
+            refs.bundle_args(),
+            ["--branches", "--tags", "HEAD", WIP_REF]
+        );
+        assert_eq!(refs.ref_patterns(), ["refs/heads", "refs/tags", WIP_REF]);
     }
 
     #[test]
@@ -883,5 +940,43 @@ mod tests {
         git.run(["tag", "both"]).unwrap();
         let error = git.ref_set(&named(&["both"])).unwrap_err().to_string();
         assert!(error.contains("not a single ref"), "{error}");
+    }
+
+    // Stash and refs
+
+    #[test]
+    fn stash_create_in_a_clean_tree_makes_no_commit() {
+        let (_dir, git) = test_repo();
+        assert_eq!(git.stash_create().unwrap(), None);
+    }
+
+    #[test]
+    fn stash_create_commits_tracked_changes_only() {
+        let (dir, git) = test_repo();
+        fs::write(dir.path().join("tracked.txt"), "v1").unwrap();
+        git.run(["add", "tracked.txt"]).unwrap();
+        run_with_identity(&git, &["commit", "-q", "-m", "add"]);
+        fs::write(dir.path().join("untracked.txt"), "new").unwrap();
+        assert_eq!(git.stash_create().unwrap(), None);
+
+        fs::write(dir.path().join("tracked.txt"), "v2").unwrap();
+        let commit = git.stash_create().unwrap().unwrap();
+        let contents = git.run(["show", &format!("{commit}:tracked.txt")]).unwrap();
+        assert_eq!(contents, "v2");
+        assert!(git.run(["stash", "list"]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn set_and_delete_ref() {
+        let (_dir, git) = test_repo();
+        let head = git.run(["rev-parse", "HEAD"]).unwrap();
+        git.set_ref(WIP_REF, &head).unwrap();
+        assert_eq!(git.run(["rev-parse", WIP_REF]).unwrap(), head);
+
+        git.delete_ref(WIP_REF).unwrap();
+        assert!(
+            !git.run_check(["rev-parse", "--verify", "--quiet", WIP_REF])
+                .unwrap()
+        );
     }
 }

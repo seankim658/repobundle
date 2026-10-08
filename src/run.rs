@@ -97,7 +97,7 @@ impl<'a> Runner<'a> {
         if !self.settings.warnings {
             return Ok(Vec::new());
         }
-        warnings::repo_warnings(self.git, output)
+        warnings::repo_warnings(self.git, output, self.settings.include_wip)
     }
 
     fn bundle_warnings(&self, output: &Output, bundle: &Path) -> Result<Vec<Warning>> {
@@ -114,10 +114,15 @@ impl<'a> Runner<'a> {
 
     /// Return what happened to the bundle this run points to. Add a warning when the previous
     /// bundle couldn't be read.
-    fn create_bundle(&self, output: &Output, warnings: &mut Vec<Warning>) -> Result<BundleOutcome> {
+    fn create_bundle(
+        &mut self,
+        output: &Output,
+        warnings: &mut Vec<Warning>,
+    ) -> Result<BundleOutcome> {
         let settings = self.settings;
         let refs = self.git.ref_set(&settings.refs)?;
         let path = create::bundle_path(self.git, output, &settings.repo_name, &refs)?;
+        let refs = self.add_wip(refs)?;
         match self.compare_with_previous(output, &refs)? {
             Some((existing, RefMatch::Current)) => return Ok(BundleOutcome::UpToDate(existing)),
             Some((previous, RefMatch::Unreadable)) if settings.warnings => {
@@ -134,13 +139,28 @@ impl<'a> Runner<'a> {
         Ok(BundleOutcome::Created { path, size })
     }
 
-    /// Compare the previous bundle with the current refs, unless `--force` skips the check.
+    /// Add a commit of the changes to tracked files when `--include-wip` asks for one. Call this
+    /// only once the repo is known to have commits, since `git stash create` needs one.
+    fn add_wip(&mut self, refs: RefSet) -> Result<RefSet> {
+        if !self.settings.include_wip {
+            return Ok(refs);
+        }
+        let commit = self.git.stash_create()?;
+        self.reporter.wip(commit.is_some());
+        match commit {
+            Some(commit) => Ok(refs.with_wip(commit)),
+            None => Ok(refs),
+        }
+    }
+
+    /// Compare the previous bundle with the current refs, unless `--force` skips the check. A WIP
+    /// commit is new every run, so a bundle holding one is never up to date.
     fn compare_with_previous(
         &self,
         output: &Output,
         refs: &RefSet,
     ) -> Result<Option<(PathBuf, RefMatch)>> {
-        if self.settings.force {
+        if self.settings.force || refs.wip().is_some() {
             return Ok(None);
         }
         let Some(previous) = create::previous_bundle(output, &self.settings.repo_name)? else {
@@ -245,12 +265,17 @@ mod tests {
     /// Keep every result instead of printing it.
     #[derive(Default)]
     struct Recorder {
+        wip: Vec<bool>,
         bundles: Vec<BundleOutcome>,
         warnings: Vec<Warning>,
         listed: Vec<ListedBundle>,
     }
 
     impl Reporter for Recorder {
+        fn wip(&mut self, included: bool) {
+            self.wip.push(included);
+        }
+
         fn bundle(&mut self, outcome: &BundleOutcome) {
             self.bundles.push(outcome.clone());
         }
@@ -331,6 +356,38 @@ mod tests {
         let (_dir, git) = test_repo();
         let recorder = run_with(&git, &["--list", "-o", "absent.bundle"]);
         assert!(recorder.listed.is_empty(), "{:?}", recorder.listed);
+    }
+
+    #[test]
+    fn include_wip_in_a_clean_tree_reuses_the_last_bundle() {
+        let (_dir, git) = test_repo();
+        run_with(&git, &[]);
+        let recorder = run_with(&git, &["--include-wip"]);
+
+        assert_eq!(recorder.wip, [false]);
+        assert!(
+            matches!(recorder.bundles.as_slice(), [BundleOutcome::UpToDate(_)]),
+            "{:?}",
+            recorder.bundles
+        );
+    }
+
+    #[test]
+    fn include_wip_with_tracked_changes_never_reuses_a_bundle() {
+        let (dir, git) = test_repo();
+        std::fs::write(dir.path().join("tracked.txt"), "v1").unwrap();
+        git.run(["add", "tracked.txt"]).unwrap();
+        run_with_identity(&git, &["commit", "-q", "-m", "add"]);
+        run_with(&git, &[]);
+        std::fs::write(dir.path().join("tracked.txt"), "v2").unwrap();
+        let recorder = run_with(&git, &["--include-wip", "--dry-run"]);
+
+        assert_eq!(recorder.wip, [true]);
+        assert!(
+            matches!(recorder.bundles.as_slice(), [BundleOutcome::WouldCreate(_)]),
+            "{:?}",
+            recorder.bundles
+        );
     }
 
     #[test]

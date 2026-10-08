@@ -8,6 +8,7 @@ This guide walks through creating bundles, reading what repobundle prints, and g
   - [Bundle Names](#bundle-names)
   - [When Nothing Has Changed](#when-nothing-has-changed)
 - [Choosing What to Bundle](#choosing-what-to-bundle)
+- [Including Uncommitted Work](#including-uncommitted-work)
 - [Choosing Where Bundles Go](#choosing-where-bundles-go)
   - [Writing a Single File](#writing-a-single-file)
 - [Warnings](#warnings)
@@ -117,6 +118,31 @@ A config file can also list refs by name, such as `refs = ["main", "v1.0"]`. See
 
 The choice also affects [the up-to-date check](#when-nothing-has-changed). With `branches`, only your own branches and tags count. With `all`, fetching from a remote moves remote-tracking branches, which makes your last bundle out of date even if you haven't committed anything. With `head`, only commits on your current branch count.
 
+## Including Uncommitted Work
+
+A bundle only holds commits, so your uncommitted changes are left out and repobundle [warns](#warnings) about them. `--include-wip` adds the changes to tracked files as an extra commit under `refs/wip/repobundle`.
+
+```bash
+repobundle --include-wip
+```
+
+```
+[✓] Created bundles/20261008T164512Z-a1b2c3d-myrepo.bundle (148.6 kB)
+```
+
+The commit is made with `git stash create`, which doesn't touch your working tree, index, or stash list. The `refs/wip/repobundle` ref only exists while the bundle is written, so nothing is left behind in your repo.
+
+- Modified and staged files are included. Untracked files aren't, so `git add` any you want, and repobundle [warns](#warnings) about the rest.
+- A bundle with uncommitted work is new every run, so the [up-to-date check](#when-nothing-has-changed) is skipped.
+- With no changes to tracked files, you get a normal bundle and a note saying so.
+
+```
+[i] No changes to tracked files, so the bundle has no WIP ref
+[✓] Up to date: bundles/20261007T133512Z-3f9a2c1-myrepo.bundle
+```
+
+A clone from the bundle checks out your last commit, not the uncommitted work. Fetch the WIP commit to get it back (see [Using a Bundle](#using-a-bundle)).
+
 ## Choosing Where Bundles Go
 
 By default bundles go into `bundles/` at the repo root. `-o` (or `--output`) picks another directory. A relative path is resolved against the directory you run from.
@@ -156,21 +182,31 @@ Warnings point out things the bundle won't contain or problems it might cause. T
 | Warning             | When                                                    |
 | ------------------- | ------------------------------------------------------- |
 | Uncommitted changes | You have modified, staged, or untracked files           |
+| Untracked files     | `--include-wip` is set and you have untracked files     |
 | Submodules          | The repo has a `.gitmodules` file                       |
 | Git LFS             | The repo's `.gitattributes` uses `filter=lfs`           |
 | Too large           | The bundle is over `max_size_mb` from a config file     |
 | Output not ignored  | The output is inside the repo and git doesn't ignore it |
 | Unreadable bundle   | The newest existing bundle can't be read                |
 
-**Uncommitted changes.** A bundle only holds commits. Up to 10 changed paths are listed, in `git status --short` form.
+**Uncommitted changes.** A bundle only holds commits. Up to 10 changed paths are listed, in `git status --short` form. When tracked files have changed, the warning points to [`--include-wip`](#including-uncommitted-work).
 
 ```
-[!] Uncommitted changes are not in the bundle
-  ?? notes.txt
+[!] Uncommitted changes are not in the bundle; pass --include-wip to add changes to tracked files
    M src/main.rs
+  ?? notes.txt
 ```
 
-Commit or stash them first if they should be included.
+Commit them, or pass `--include-wip`, if they should be included.
+
+**Untracked files.** With `--include-wip`, changes to tracked files are in the bundle, so only untracked files are listed.
+
+```
+[!] Untracked files are not in the bundle, even with --include-wip
+  ?? notes.txt
+```
+
+`git add` them before running if they should be included.
 
 **Submodules.** The bundle records which commit each submodule points to, but not the submodule's own files.
 
@@ -269,7 +305,8 @@ repobundle --json
   "bundle": {
     "status": "created",
     "path": "/home/me/code/myrepo/bundles/20261007T150211Z-c71d9e4-myrepo.bundle",
-    "size": 149012
+    "size": 149012,
+    "wip": false
   },
   "warnings": [
     {
@@ -291,11 +328,12 @@ Paths are always absolute, wherever you run from.
 | `bundle`         | The bundle this run points to, or `null` with `--prune-only`                                    |
 | `bundle.status`  | `created`, `up_to_date`, or `would_create` (a dry run)                                          |
 | `bundle.size`    | The size in bytes of a bundle this run created, otherwise `null`                                |
+| `bundle.wip`     | `true` when the bundle holds [uncommitted work](#including-uncommitted-work)                    |
 | `warnings`       | Every [warning](#warnings), each with a `kind` and the `message` you'd see without `--json`     |
 | `prune.status`   | `none`, `nothing_to_prune`, `would_delete`, `deleted`, or `skipped`                             |
 | `prune.paths`    | The bundles deleted, or with `would_delete` the ones a real run would delete                    |
 
-Match on a warning's `kind` rather than its message, since messages may be reworded. The kinds are `uncommitted_changes`, `submodules`, `lfs`, `too_large`, `unignored_output`, `unreadable_bundle`, and `prune_skipped`.
+Match on a warning's `kind` rather than its message, since messages may be reworded. The kinds are `uncommitted_changes`, `untracked_files`, `submodules`, `lfs`, `too_large`, `unignored_output`, `unreadable_bundle`, and `prune_skipped`.
 
 With `--list`, the object holds the listing instead.
 
@@ -366,6 +404,10 @@ git bundle list-heads 20261007T133512Z-3f9a2c1-myrepo.bundle
 
 # Pull its branches into an existing clone without touching your own
 git fetch 20261007T133512Z-3f9a2c1-myrepo.bundle 'refs/heads/*:refs/remotes/bundle/*'
+
+# Restore the uncommitted work from a bundle made with --include-wip
+git fetch 20261007T133512Z-3f9a2c1-myrepo.bundle refs/wip/repobundle
+git stash apply FETCH_HEAD
 ```
 
 Because the bundle includes `HEAD`, a clone from it checks out the branch you were on when it was made.
