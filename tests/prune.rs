@@ -86,6 +86,9 @@ fn config_prune_without_terminal_warns_and_keeps_everything() {
 fn force_does_not_approve_deletion() {
     let fixture = Fixture::with_commit();
     create_bundles(&fixture, 2);
+    // Move HEAD so the forced bundle gets a new name. On the same commit in the same second,
+    // it would replace the newest bundle instead of adding one.
+    fixture.commit("unbundled");
     let stderr = fixture.fail(&["--prune", "--force"]);
 
     assert!(stderr.contains("--yes"), "{stderr}");
