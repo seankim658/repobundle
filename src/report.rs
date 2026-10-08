@@ -7,7 +7,7 @@ use chrono::SecondsFormat;
 
 use crate::bundles::BundleFile;
 use crate::create::RefMatch;
-use crate::output;
+use crate::output::{self, Spinner};
 use crate::settings::Output;
 use crate::warnings::Warning;
 
@@ -58,10 +58,24 @@ pub trait Reporter {
     /// Note that a prune from config was skipped for want of a prompt. Text output relies on the
     /// warning that comes with it.
     fn prune_skipped(&mut self) {}
+
+    /// Show progress while `path` is written, until the returned spinner is dropped. Only text
+    /// output draws one.
+    fn writing(&self, _path: &Path) -> Spinner {
+        Spinner::hidden()
+    }
 }
 
 /// Print each result right away, in the badge format.
-pub struct TextReporter;
+pub struct TextReporter {
+    spinner: bool,
+}
+
+impl TextReporter {
+    pub fn new(spinner: bool) -> Self {
+        Self { spinner }
+    }
+}
 
 impl Reporter for TextReporter {
     fn bundle(&mut self, outcome: &BundleOutcome) {
@@ -94,6 +108,13 @@ impl Reporter for TextReporter {
 
     fn list(&mut self, output: &Output, bundles: &[ListedBundle]) {
         output::listing(output, bundles);
+    }
+
+    fn writing(&self, path: &Path) -> Spinner {
+        if !self.spinner {
+            return Spinner::hidden();
+        }
+        output::writing_spinner(path)
     }
 }
 

@@ -45,6 +45,8 @@ Paths are printed relative to the directory you run repobundle from. A bundle ou
 
 The bundle is built under a temporary name first and only renamed once it verifies. A failed run never leaves a half-written bundle behind or replaces a good one.
 
+While the bundle is written and verified, a spinner shows on stderr. It only appears when stderr is a terminal, never with `--json`, and is cleared before the result prints. Pass `--no-spinner` to turn it off.
+
 To bundle a repo other than the one you're in, pass its path.
 
 ```bash

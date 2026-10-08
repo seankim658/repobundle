@@ -44,7 +44,8 @@ fn run_bundle(args: &BundleArgs) -> Result<()> {
     let settings = load_settings(args, &git)?;
     debug!(?settings, "resolved settings");
     if !settings.json {
-        return Runner::new(&git, &settings, &mut TextReporter).run();
+        let mut reporter = TextReporter::new(settings.spinner);
+        return Runner::new(&git, &settings, &mut reporter).run();
     }
     let mut reporter = JsonReporter::default();
     Runner::new(&git, &settings, &mut reporter).run()?;

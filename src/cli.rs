@@ -80,6 +80,10 @@ pub struct BundleArgs {
     #[arg(long)]
     pub no_warnings: bool,
 
+    /// Don't show a spinner while the bundle is written.
+    #[arg(long)]
+    pub no_spinner: bool,
+
     /// Print the result as one JSON object on stdout.
     #[arg(long)]
     pub json: bool,
@@ -173,6 +177,12 @@ mod tests {
                 "{flag}"
             );
         }
+    }
+
+    #[test]
+    fn spinner_is_on_unless_turned_off() {
+        assert!(!parse(&[]).no_spinner);
+        assert!(parse(&["--no-spinner"]).no_spinner);
     }
 
     #[test]

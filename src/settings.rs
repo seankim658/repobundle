@@ -24,6 +24,7 @@ pub struct Settings {
     pub force: bool,
     pub yes: bool,
     pub warnings: bool,
+    pub spinner: bool,
     pub json: bool,
 }
 
@@ -99,6 +100,7 @@ impl Settings {
             force: args.force,
             yes: args.yes,
             warnings: !args.no_warnings,
+            spinner: !args.no_spinner,
             json: args.json,
         })
     }
@@ -314,6 +316,7 @@ mod tests {
             force: false,
             yes: false,
             warnings: true,
+            spinner: true,
             json: false,
         };
         assert_eq!(resolve_ok(&[], Defaults::default()), expected);
@@ -346,6 +349,11 @@ mod tests {
             settings.action,
             create_in_default_dir("{repo}.bundle".parse().unwrap())
         );
+    }
+
+    #[test]
+    fn no_spinner_flag_turns_the_spinner_off() {
+        assert!(!resolve_ok(&["--no-spinner"], Defaults::default()).spinner);
     }
 
     // Output

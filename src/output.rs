@@ -2,9 +2,11 @@ use std::env;
 use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use colored::{Color, Colorize};
+use indicatif::ProgressBar;
 
 use crate::bundles::BundleFile;
 use crate::create::RefMatch;
@@ -16,6 +18,7 @@ use crate::warnings::Warning;
 const SECONDS_PER_MINUTE: i64 = 60;
 const SECONDS_PER_HOUR: i64 = 60 * SECONDS_PER_MINUTE;
 const SECONDS_PER_DAY: i64 = 24 * SECONDS_PER_HOUR;
+const SPINNER_TICK: Duration = Duration::from_millis(100);
 
 static STREAM_COLORS: OnceLock<StreamColors> = OnceLock::new();
 static PATH_BASES: OnceLock<PathBases> = OnceLock::new();
@@ -72,6 +75,36 @@ pub fn up_to_date(path: &Path) {
         badge(Badge::Success),
         display_path(path)
     );
+}
+
+/// A spinner on stderr that clears itself when dropped, so a failed write leaves no trace of it
+/// above the error.
+pub struct Spinner(Option<ProgressBar>);
+
+impl Spinner {
+    /// Return a spinner that never draws, for runs that shouldn't show one.
+    pub fn hidden() -> Self {
+        Self(None)
+    }
+}
+
+impl Drop for Spinner {
+    fn drop(&mut self) {
+        if let Some(bar) = &self.0 {
+            bar.finish_and_clear();
+        }
+    }
+}
+
+/// Spin while `path` is written and verified. Draw only on a terminal, so a redirected stderr
+/// never collects spinner frames.
+pub fn writing_spinner(path: &Path) -> Spinner {
+    if !io::stderr().is_terminal() {
+        return Spinner::hidden();
+    }
+    let bar = ProgressBar::new_spinner().with_message(format!("Writing {}", display_path(path)));
+    bar.enable_steady_tick(SPINNER_TICK);
+    Spinner(Some(bar))
 }
 
 pub fn would_create(path: &Path) {

@@ -128,7 +128,9 @@ impl<'a> Runner<'a> {
         if settings.dry_run {
             return Ok(BundleOutcome::WouldCreate(path));
         }
+        let spinner = self.reporter.writing(&path);
         let size = create::write_bundle(self.git, &path, &refs)?;
+        drop(spinner);
         Ok(BundleOutcome::Created { path, size })
     }
 
