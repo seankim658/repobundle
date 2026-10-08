@@ -70,7 +70,7 @@ a run keeps 2 bundles and bundles only the checked-out branch.
 | ------------- | ------------------------------------ | -------------------------------------------------------------------- |
 | `output`      | `"bundles"`                          | Where bundles go. A path ending in `.bundle` is a single file.       |
 | `name`        | `"{timestamp}-{hash}-{repo}.bundle"` | Filename template for a directory output.                            |
-| `refs`        | `"all"`                              | Which refs to bundle. One of `"all"`, `"branches"`, or `"head"`.     |
+| `refs`        | `"branches"`                         | Which refs to bundle. One of `"all"`, `"branches"`, or `"head"`.     |
 | `prune`       | _(unset)_                            | After creating a bundle, keep only the newest N. Unset never prunes. |
 | `max_size_mb` | _(unset)_                            | Warn when a bundle is larger than this. Unset never warns.           |
 | `repo_name`   | _(unset)_                            | The name used for `{repo}`. Unset uses the repo directory's name.    |
@@ -164,7 +164,7 @@ Which refs go into the bundle. Every bundle also includes `HEAD`, so a clone fro
 | `"branches"` | Local branches and tags                                                   |
 | `"head"`     | Only the checked-out branch. On a detached HEAD, only `HEAD`              |
 
-With `"all"`, a new bundle is created whenever any ref moves, even one on a branch you aren't working on. Use `"head"` if you only care about the branch you're on.
+The default is `"branches"`. With `"all"`, a new bundle is created whenever any ref moves, including after a plain `git fetch`, since that moves remote-tracking branches. Use `"head"` if you only care about the branch you're on.
 
 ### `prune`
 

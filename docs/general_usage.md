@@ -102,14 +102,14 @@ If the newest bundle is damaged and its refs can't be read, it counts as out of 
 | `branches` | Local branches and tags                                                   |
 | `head`     | Only the checked-out branch. On a detached HEAD, only `HEAD`              |
 
-The default is `all`.
+The default is `branches`.
 
 ```bash
 # Only the branch you're on
 repobundle --refs head
 ```
 
-The choice also affects [the up-to-date check](#when-nothing-has-changed). With `all`, fetching from a remote moves remote-tracking branches, which makes your last bundle out of date even if you haven't committed anything. With `head`, only commits on your current branch count.
+The choice also affects [the up-to-date check](#when-nothing-has-changed). With `branches`, only your own branches and tags count. With `all`, fetching from a remote moves remote-tracking branches, which makes your last bundle out of date even if you haven't committed anything. With `head`, only commits on your current branch count.
 
 ## Choosing Where Bundles Go
 

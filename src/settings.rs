@@ -265,7 +265,7 @@ mod tests {
     fn uses_built_in_defaults_without_flags_or_config() {
         let expected = Settings {
             output: default_directory(default_template()),
-            refs: RefSelection::All,
+            refs: RefSelection::Branches,
             repo_name: repo_name("work"),
             max_size_mb: None,
             dry_run: false,
@@ -279,13 +279,13 @@ mod tests {
     #[test]
     fn config_fills_values_without_flags() {
         let config = Defaults {
-            refs: Some(RefSelection::Branches),
+            refs: Some(RefSelection::All),
             max_size_mb: NonZeroU64::new(30),
             repo_name: Some(repo_name("renamed")),
             ..Defaults::default()
         };
         let settings = resolve_ok(&[], config);
-        assert_eq!(settings.refs, RefSelection::Branches);
+        assert_eq!(settings.refs, RefSelection::All);
         assert_eq!(settings.max_size_mb, NonZeroU64::new(30));
         assert_eq!(settings.repo_name, repo_name("renamed"));
     }

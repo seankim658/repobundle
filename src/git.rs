@@ -34,8 +34,11 @@ pub fn ensure_installed() -> Result<()> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RefSelection {
-    #[default]
     All,
+    // The default, since remote-tracking refs move on every fetch and would make the last
+    // bundle look out of date without any new commits. A doc comment here would show up as
+    // help for this value in `--help`.
+    #[default]
     Branches,
     Head,
 }

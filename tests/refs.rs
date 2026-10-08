@@ -53,13 +53,16 @@ fn all_bundles_every_kind_of_ref() {
 }
 
 #[test]
-fn default_refs_value_is_all() {
+fn default_refs_value_is_branches() {
     let fixture = fixture_with_every_ref_kind();
     fixture.succeed(&["-o", "default.bundle"]);
     let default = fixture.repo_dir().join("default.bundle");
-    let all = bundle_with(&fixture, "all");
+    let branches = bundle_with(&fixture, "branches");
 
-    assert_eq!(ref_names(&fixture, &default), ref_names(&fixture, &all));
+    assert_eq!(
+        ref_names(&fixture, &default),
+        ref_names(&fixture, &branches)
+    );
 }
 
 #[test]

@@ -12,8 +12,9 @@ output = "bundles"
 # See docs/config_file.md for the placeholders.
 name = "{timestamp}-{hash}-{repo}.bundle"
 
-# Which refs to bundle. One of "all", "branches", or "head".
-refs = "all"
+# Which refs to bundle. One of "all", "branches", or "head". "all" also takes remote-tracking
+# branches, so every fetch makes the last bundle out of date.
+refs = "branches"
 
 # After creating a bundle, keep only the newest N bundles of this repo. Omit to never prune.
 # This has no effect when `output` names a single file.
