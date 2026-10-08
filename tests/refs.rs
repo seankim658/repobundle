@@ -8,6 +8,10 @@ use common::Fixture;
 use repobundle::git::Git;
 use tempfile::TempDir;
 
+const CONFIG_FILE: &str = ".repobundle.toml";
+/// Short names, so the tests also check that they're stored as full names.
+const NAMED_REFS_CONFIG: &str = "[defaults]\nrefs = [\"feature\", \"v1\"]\n";
+
 /// A repo on `main` with another branch, a tag, and a remote-tracking ref, so each `--refs`
 /// value bundles a different set.
 fn fixture_with_every_ref_kind() -> Fixture {
@@ -118,4 +122,34 @@ fn every_refs_value_clones_to_the_same_head() {
         let cloned_head = Git::new(target.path()).run(["rev-parse", "HEAD"]).unwrap();
         assert_eq!(cloned_head, head, "--refs {refs}");
     }
+}
+
+#[test]
+fn config_list_bundles_the_named_refs_and_head() {
+    let fixture = fixture_with_every_ref_kind();
+    fixture.write_file(CONFIG_FILE, NAMED_REFS_CONFIG);
+    fixture.succeed(&["-o", "named.bundle"]);
+    let bundle = fixture.repo_dir().join("named.bundle");
+
+    let expected = names(&["HEAD", "refs/heads/feature", "refs/tags/v1"]);
+    assert_eq!(ref_names(&fixture, &bundle), expected);
+}
+
+#[test]
+fn config_list_is_up_to_date_on_the_next_run() {
+    let fixture = fixture_with_every_ref_kind();
+    fixture.write_file(CONFIG_FILE, NAMED_REFS_CONFIG);
+    fixture.succeed(&["-o", "named.bundle"]);
+    let stdout = fixture.succeed(&["-o", "named.bundle"]);
+
+    assert!(stdout.contains("Up to date"), "{stdout}");
+}
+
+#[test]
+fn config_list_with_a_missing_ref_fails() {
+    let fixture = fixture_with_every_ref_kind();
+    fixture.write_file(CONFIG_FILE, "[defaults]\nrefs = [\"absent\"]\n");
+    let stderr = fixture.fail(&[]);
+
+    assert!(stderr.contains("`absent`"), "{stderr}");
 }

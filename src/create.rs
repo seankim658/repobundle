@@ -185,7 +185,7 @@ mod tests {
     }
 
     fn refs_of(git: &Git, selection: RefSelection) -> RefSet {
-        git.ref_set(selection).unwrap()
+        git.ref_set(&selection.into()).unwrap()
     }
 
     fn all_refs(git: &Git) -> RefSet {

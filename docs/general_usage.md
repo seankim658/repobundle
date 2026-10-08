@@ -113,6 +113,8 @@ The default is `branches`.
 repobundle --refs head
 ```
 
+A config file can also list refs by name, such as `refs = ["main", "v1.0"]`. See [`refs`](./config_file.md#refs).
+
 The choice also affects [the up-to-date check](#when-nothing-has-changed). With `branches`, only your own branches and tags count. With `all`, fetching from a remote moves remote-tracking branches, which makes your last bundle out of date even if you haven't committed anything. With `head`, only commits on your current branch count.
 
 ## Choosing Where Bundles Go

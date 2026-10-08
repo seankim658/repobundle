@@ -8,7 +8,7 @@ use serde::Deserialize;
 use thiserror::Error;
 use tracing::debug;
 
-use crate::git::RefSelection;
+use crate::git::RefSpec;
 use crate::naming::NameTemplate;
 
 const CONFIG_FILE_NAME: &str = ".repobundle.toml";
@@ -21,7 +21,7 @@ pub struct Defaults {
     /// root.
     pub output: Option<PathBuf>,
     pub name: Option<NameTemplate>,
-    pub refs: Option<RefSelection>,
+    pub refs: Option<RefSpec>,
     pub prune: Option<NonZeroUsize>,
     pub max_size_mb: Option<NonZeroU64>,
     pub repo_name: Option<RepoName>,
@@ -187,6 +187,7 @@ fn resolve_output(output: &Path, repo_root: &Path, home: Option<&Path>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::RefSelection;
     use tempfile::TempDir;
 
     fn parse_error(text: &str) -> String {
@@ -229,7 +230,7 @@ mod tests {
         let expected = Defaults {
             output: Some(PathBuf::from("out")),
             name: Some("{date}-{repo}.bundle".parse().unwrap()),
-            refs: Some(RefSelection::Branches),
+            refs: Some(RefSpec::Selection(RefSelection::Branches)),
             prune: NonZeroUsize::new(3),
             max_size_mb: NonZeroU64::new(30),
             repo_name: Some(RepoName::try_from("renamed".to_string()).unwrap()),
@@ -297,6 +298,13 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn reads_a_list_of_refs() {
+        let defaults = parse("[defaults]\nrefs = [\"main\", \"v1\"]").unwrap();
+        let expected = RefSpec::Named(vec!["main".to_string(), "v1".to_string()]);
+        assert_eq!(defaults.refs, Some(expected));
     }
 
     #[test]
@@ -447,7 +455,7 @@ mod tests {
 
         let defaults = load_from(&root, &home);
         assert_eq!(defaults.prune, NonZeroUsize::new(2));
-        assert_eq!(defaults.refs, Some(RefSelection::Head));
+        assert_eq!(defaults.refs, Some(RefSpec::Selection(RefSelection::Head)));
     }
 
     #[test]

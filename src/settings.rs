@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use crate::bundles::BundleDir;
 use crate::cli::BundleArgs;
 use crate::config::{Defaults, RepoName};
-use crate::git::RefSelection;
+use crate::git::RefSpec;
 use crate::naming::{DEFAULT_TEMPLATE, NameTemplate};
 
 const DEFAULT_OUTPUT_DIR: &str = "bundles";
@@ -17,7 +17,7 @@ const BUNDLE_EXTENSION: &str = "bundle";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub action: Action,
-    pub refs: RefSelection,
+    pub refs: RefSpec,
     pub repo_name: RepoName,
     pub max_size_mb: Option<NonZeroU64>,
     pub dry_run: bool,
@@ -93,7 +93,7 @@ impl Settings {
         let path = output_path(args.output.as_deref(), output, locations);
         Ok(Self {
             action: resolve_action(args, path, DirectoryDefaults { name, prune })?,
-            refs: args.refs.or(refs).unwrap_or_default(),
+            refs: args.refs.map(RefSpec::from).or(refs).unwrap_or_default(),
             repo_name: resolve_repo_name(repo_name, locations.repo_root)?,
             max_size_mb,
             dry_run: args.dry_run,
@@ -228,6 +228,7 @@ fn default_template() -> NameTemplate {
 mod tests {
     use super::*;
     use crate::cli::Cli;
+    use crate::git::RefSelection;
     use clap::Parser;
 
     const CWD: &str = "/work/sub";
@@ -309,7 +310,7 @@ mod tests {
     fn uses_built_in_defaults_without_flags_or_config() {
         let expected = Settings {
             action: create_in_default_dir(default_template()),
-            refs: RefSelection::Branches,
+            refs: RefSpec::Selection(RefSelection::Branches),
             repo_name: repo_name("work"),
             max_size_mb: None,
             dry_run: false,
@@ -325,13 +326,13 @@ mod tests {
     #[test]
     fn config_fills_values_without_flags() {
         let config = Defaults {
-            refs: Some(RefSelection::All),
+            refs: Some(RefSelection::All.into()),
             max_size_mb: NonZeroU64::new(30),
             repo_name: Some(repo_name("renamed")),
             ..Defaults::default()
         };
         let settings = resolve_ok(&[], config);
-        assert_eq!(settings.refs, RefSelection::All);
+        assert_eq!(settings.refs, RefSpec::Selection(RefSelection::All));
         assert_eq!(settings.max_size_mb, NonZeroU64::new(30));
         assert_eq!(settings.repo_name, repo_name("renamed"));
     }
@@ -339,12 +340,12 @@ mod tests {
     #[test]
     fn flags_override_config() {
         let config = Defaults {
-            refs: Some(RefSelection::Branches),
+            refs: Some(RefSelection::Branches.into()),
             name: Some("{date}-{repo}.bundle".parse().unwrap()),
             ..Defaults::default()
         };
         let settings = resolve_ok(&["--refs", "head", "--name", "{repo}.bundle"], config);
-        assert_eq!(settings.refs, RefSelection::Head);
+        assert_eq!(settings.refs, RefSpec::Selection(RefSelection::Head));
         assert_eq!(
             settings.action,
             create_in_default_dir("{repo}.bundle".parse().unwrap())
@@ -354,6 +355,19 @@ mod tests {
     #[test]
     fn no_spinner_flag_turns_the_spinner_off() {
         assert!(!resolve_ok(&["--no-spinner"], Defaults::default()).spinner);
+    }
+
+    #[test]
+    fn refs_flag_overrides_a_config_list() {
+        let list = RefSpec::Named(vec!["main".to_string()]);
+        let config = Defaults {
+            refs: Some(list.clone()),
+            ..Defaults::default()
+        };
+        assert_eq!(resolve_ok(&[], config.clone()).refs, list);
+
+        let settings = resolve_ok(&["--refs", "all"], config);
+        assert_eq!(settings.refs, RefSpec::Selection(RefSelection::All));
     }
 
     // Output

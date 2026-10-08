@@ -70,7 +70,7 @@ a run keeps 2 bundles and bundles only the checked-out branch.
 | ------------- | ------------------------------------ | -------------------------------------------------------------------- |
 | `output`      | `"bundles"`                          | Where bundles go. A path ending in `.bundle` is a single file.       |
 | `name`        | `"{timestamp}-{hash}-{repo}.bundle"` | Filename template for a directory output.                            |
-| `refs`        | `"branches"`                         | Which refs to bundle. One of `"all"`, `"branches"`, or `"head"`.     |
+| `refs`        | `"branches"`                         | Which refs to bundle. `"all"`, `"branches"`, `"head"`, or a list.    |
 | `prune`       | _(unset)_                            | After creating a bundle, keep only the newest N. Unset never prunes. |
 | `max_size_mb` | _(unset)_                            | Warn when a bundle is larger than this. Unset never warns.           |
 | `repo_name`   | _(unset)_                            | The name used for `{repo}`. Unset uses the repo directory's name.    |
@@ -166,6 +166,17 @@ Which refs go into the bundle. Every bundle also includes `HEAD`, so a clone fro
 
 The default is `"branches"`. With `"all"`, a new bundle is created whenever any ref moves, including after a plain `git fetch`, since that moves remote-tracking branches. Use `"head"` if you only care about the branch you're on.
 
+To bundle exactly the refs you want, give a list instead. `HEAD` is always added.
+
+```toml
+[defaults]
+refs = ["main", "release", "v1.0"]
+```
+
+Each entry can be a branch, a tag, a remote-tracking branch such as `origin/main`, or a full ref name such as `refs/notes/commits`. repobundle checks every entry when it runs and records it under its full name. The run fails if an entry doesn't exist, or if it isn't exactly one ref, such as a commit hash or a name used by both a branch and a tag. Write the full name, such as `refs/tags/v1.0`, to settle that.
+
+A list can only be set in a config file. `--refs` on the command line replaces it with one of the three values.
+
 ### `prune`
 
 After creating a bundle, keep only the newest N bundles of this repo and delete the rest. The new bundle always counts as one of the N.
@@ -214,6 +225,7 @@ Config problems stop the run before anything is created or deleted.
 
 - An unknown key or table is an error, so a typo like `max_size = 30` doesn't silently do nothing.
 - `prune` and `max_size_mb` must be at least 1. Leave a key out to turn it off.
+- A `refs` list can't be empty, and no entry can be empty or start with `-`.
 - A file that exists but can't be read or parsed is an error that names the file and the problem.
 
 ## See Also

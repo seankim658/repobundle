@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -7,7 +8,8 @@ use std::process::{Command, Output};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::ValueEnum;
-use serde::Deserialize;
+use serde::de::{self, IntoDeserializer, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use tracing::debug;
 
 const GIT: &str = "git";
@@ -44,6 +46,76 @@ pub enum RefSelection {
     Head,
 }
 
+/// The refs a run asks for, before git has checked them. `--refs` only picks a selection, while
+/// config can also list refs by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefSpec {
+    Selection(RefSelection),
+    /// Ref names as written in config, such as `main` or `refs/tags/v1`.
+    Named(Vec<String>),
+}
+
+impl Default for RefSpec {
+    fn default() -> Self {
+        Self::Selection(RefSelection::default())
+    }
+}
+
+impl From<RefSelection> for RefSpec {
+    fn from(selection: RefSelection) -> Self {
+        Self::Selection(selection)
+    }
+}
+
+/// Read either a selection name or a list of ref names, so `refs` in config takes both forms.
+impl<'de> Deserialize<'de> for RefSpec {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(RefSpecVisitor)
+    }
+}
+
+struct RefSpecVisitor;
+
+impl<'de> Visitor<'de> for RefSpecVisitor {
+    type Value = RefSpec;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("\"all\", \"branches\", \"head\", or a list of ref names")
+    }
+
+    fn visit_str<E: de::Error>(self, value: &str) -> Result<RefSpec, E> {
+        let deserializer: de::value::StrDeserializer<'_, E> = value.into_deserializer();
+        RefSelection::deserialize(deserializer).map(RefSpec::Selection)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<RefSpec, A::Error> {
+        let mut names = Vec::new();
+        while let Some(name) = seq.next_element::<String>()? {
+            check_ref_name(&name).map_err(<A::Error as de::Error>::custom)?;
+            names.push(name);
+        }
+        if names.is_empty() {
+            return Err(de::Error::custom(
+                "the `refs` list is empty; list at least one ref, or use \"head\"",
+            ));
+        }
+        Ok(RefSpec::Named(names))
+    }
+}
+
+/// Refuse a name git would read as an option, since it's passed to git as an argument.
+fn check_ref_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("a ref name in `refs` is empty".to_string());
+    }
+    if name.starts_with('-') {
+        return Err(format!(
+            "ref name `{name}` in `refs` must not start with `-`"
+        ));
+    }
+    Ok(())
+}
+
 fn branch_ref(branch: &str) -> String {
     format!("refs/heads/{branch}")
 }
@@ -52,9 +124,16 @@ fn branch_ref(branch: &str) -> String {
 /// both the bundle and the skip check from one value, so they always agree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefSet {
-    selection: RefSelection,
+    scope: RefScope,
     /// The checked-out branch's short name, or `None` on a detached HEAD.
     branch: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RefScope {
+    Selection(RefSelection),
+    /// Full ref names, each checked to exist.
+    Named(BTreeSet<String>),
 }
 
 impl RefSet {
@@ -63,7 +142,28 @@ impl RefSet {
     }
 
     fn bundle_args(&self) -> Vec<String> {
-        match self.selection {
+        match &self.scope {
+            RefScope::Selection(selection) => self.selection_args(*selection),
+            RefScope::Named(names) => {
+                let mut args = vec![HEAD.to_string()];
+                args.extend(names.iter().cloned());
+                args
+            }
+        }
+    }
+
+    /// Return the `for-each-ref` patterns that list the same refs as `bundle_args`, minus `HEAD`.
+    /// A full ref name that exists matches only itself, since git forbids a ref with refs below
+    /// it.
+    fn ref_patterns(&self) -> Vec<String> {
+        match &self.scope {
+            RefScope::Selection(selection) => self.selection_patterns(*selection),
+            RefScope::Named(names) => names.iter().cloned().collect(),
+        }
+    }
+
+    fn selection_args(&self, selection: RefSelection) -> Vec<String> {
+        match selection {
             RefSelection::All => vec!["--all".to_string()],
             RefSelection::Branches => vec![
                 "--branches".to_string(),
@@ -78,9 +178,8 @@ impl RefSet {
         }
     }
 
-    /// Return the `for-each-ref` patterns that list the same refs as `bundle_args`, minus `HEAD`.
-    fn ref_patterns(&self) -> Vec<String> {
-        match self.selection {
+    fn selection_patterns(&self, selection: RefSelection) -> Vec<String> {
+        match selection {
             RefSelection::All => vec!["refs".to_string()],
             RefSelection::Branches => vec!["refs/heads".to_string(), "refs/tags".to_string()],
             RefSelection::Head => self.branch().map(branch_ref).into_iter().collect(),
@@ -164,11 +263,52 @@ impl Git {
     }
 
     /// Read the checked-out branch once, so every use of the returned refs sees the same one.
-    pub fn ref_set(&self, selection: RefSelection) -> Result<RefSet> {
+    /// Check each named ref and turn it into its full name.
+    pub fn ref_set(&self, spec: &RefSpec) -> Result<RefSet> {
+        let scope = match spec {
+            RefSpec::Selection(selection) => RefScope::Selection(*selection),
+            RefSpec::Named(names) => RefScope::Named(self.full_ref_names(names)?),
+        };
         Ok(RefSet {
-            selection,
+            scope,
             branch: self.current_branch()?,
         })
+    }
+
+    /// Skip `HEAD`, which every bundle holds anyway, so it never turns into the branch it points
+    /// to.
+    fn full_ref_names(&self, names: &[String]) -> Result<BTreeSet<String>> {
+        names
+            .iter()
+            .filter(|name| name.as_str() != HEAD)
+            .map(|name| self.full_ref_name(name))
+            .collect()
+    }
+
+    /// Return the full name of the ref `name` resolves to, such as `refs/heads/main` for `main`.
+    /// The bundle records full names, so the skip check would never match a short one. Refuse a
+    /// name that isn't exactly one ref, such as a commit hash, since a bundle can only carry refs.
+    fn full_ref_name(&self, name: &str) -> Result<String> {
+        let args = [
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--symbolic-full-name",
+            name,
+        ];
+        let (command_line, output) = self.execute(args)?;
+        match output.status.code() {
+            Some(0) => {}
+            Some(1) => bail!("the ref `{name}` listed in `refs` does not exist"),
+            _ => return Err(command_error(&command_line, &output)),
+        }
+        let full_name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if full_name.is_empty() {
+            bail!(
+                "`{name}` listed in `refs` is not a single ref; use a branch, tag, or full ref name such as `refs/tags/v1`"
+            );
+        }
+        Ok(full_name)
     }
 
     /// Return the checked-out branch's short name, or `None` on a detached HEAD.
@@ -376,13 +516,66 @@ mod tests {
 
     fn fixed_refs(selection: RefSelection, branch: Option<&str>) -> RefSet {
         RefSet {
-            selection,
+            scope: RefScope::Selection(selection),
             branch: branch.map(str::to_string),
         }
     }
 
     fn refs_of(git: &Git, selection: RefSelection) -> RefSet {
-        git.ref_set(selection).unwrap()
+        git.ref_set(&selection.into()).unwrap()
+    }
+
+    fn named(names: &[&str]) -> RefSpec {
+        RefSpec::Named(names.iter().map(|name| name.to_string()).collect())
+    }
+
+    fn ref_names(tips: &BTreeSet<RefTip>) -> Vec<&str> {
+        tips.iter().map(|tip| tip.name.as_str()).collect()
+    }
+
+    fn parse_spec(toml_value: &str) -> Result<RefSpec, toml::de::Error> {
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            refs: RefSpec,
+        }
+        let wrapper: Wrapper = toml::from_str(&format!("refs = {toml_value}"))?;
+        Ok(wrapper.refs)
+    }
+
+    // RefSpec
+
+    #[test]
+    fn spec_reads_a_selection_name() {
+        let spec = parse_spec("\"head\"").unwrap();
+        assert_eq!(spec, RefSpec::Selection(RefSelection::Head));
+    }
+
+    #[test]
+    fn spec_reads_a_list_of_names() {
+        let spec = parse_spec("[\"main\", \"refs/tags/v1\"]").unwrap();
+        assert_eq!(spec, named(&["main", "refs/tags/v1"]));
+    }
+
+    #[test]
+    fn spec_rejects_unknown_selection_and_wrong_types() {
+        for value in ["\"everything\"", "3"] {
+            let error = parse_spec(value).unwrap_err().to_string();
+            assert!(error.contains("branches"), "{value}: {error}");
+        }
+    }
+
+    #[test]
+    fn spec_rejects_empty_lists_and_names() {
+        for value in ["[]", "[\"\"]"] {
+            let error = parse_spec(value).unwrap_err().to_string();
+            assert!(error.contains("empty"), "{value}: {error}");
+        }
+    }
+
+    #[test]
+    fn spec_rejects_names_that_look_like_options() {
+        let error = parse_spec("[\"--all\"]").unwrap_err().to_string();
+        assert!(error.contains("must not start with `-`"), "{error}");
     }
 
     // RefSet
@@ -624,7 +817,71 @@ mod tests {
         let refs = git
             .current_refs(&refs_of(&git, RefSelection::Head))
             .unwrap();
-        let names: Vec<&str> = refs.iter().map(|tip| tip.name.as_str()).collect();
-        assert_eq!(names, ["HEAD"]);
+        assert_eq!(ref_names(&refs), ["HEAD"]);
+    }
+
+    // Named refs
+
+    #[test]
+    fn named_refs_resolve_to_full_names() {
+        let (_dir, git) = repo_with_every_ref_kind();
+        let spec = named(&["feature", "v1", "origin/main", "refs/heads/main"]);
+        let refs = git.current_refs(&git.ref_set(&spec).unwrap()).unwrap();
+
+        let expected = [
+            "HEAD",
+            "refs/heads/feature",
+            "refs/heads/main",
+            "refs/remotes/origin/main",
+            "refs/tags/v1",
+        ];
+        assert_eq!(ref_names(&refs), expected);
+    }
+
+    #[test]
+    fn named_head_stays_head() {
+        let (_dir, git) = test_repo();
+        let refs = git.ref_set(&named(&["HEAD"])).unwrap();
+        assert_eq!(ref_names(&git.current_refs(&refs).unwrap()), ["HEAD"]);
+    }
+
+    #[test]
+    fn named_bundle_matches_its_current_refs() {
+        let (dir, git) = repo_with_every_ref_kind();
+        let refs = git.ref_set(&named(&["feature", "v1"])).unwrap();
+        let bundle = dir.path().join("named.bundle");
+        git.create_bundle(&bundle, &refs).unwrap();
+
+        assert_eq!(
+            git.bundle_refs(&bundle).unwrap(),
+            git.current_refs(&refs).unwrap()
+        );
+    }
+
+    #[test]
+    fn missing_named_ref_is_rejected() {
+        let (_dir, git) = test_repo();
+        let error = git.ref_set(&named(&["nope"])).unwrap_err().to_string();
+        assert!(
+            error.contains("`nope`") && error.contains("does not exist"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn commit_hash_is_not_a_named_ref() {
+        let (_dir, git) = test_repo();
+        let hash = git.run(["rev-parse", "HEAD"]).unwrap();
+        let error = git.ref_set(&named(&[&hash])).unwrap_err().to_string();
+        assert!(error.contains("not a single ref"), "{error}");
+    }
+
+    #[test]
+    fn ambiguous_named_ref_is_rejected() {
+        let (_dir, git) = test_repo();
+        git.run(["branch", "both"]).unwrap();
+        git.run(["tag", "both"]).unwrap();
+        let error = git.ref_set(&named(&["both"])).unwrap_err().to_string();
+        assert!(error.contains("not a single ref"), "{error}");
     }
 }

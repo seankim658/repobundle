@@ -51,7 +51,7 @@ impl<'a> Runner<'a> {
         self.git.ensure_has_commits()?;
         let current = self
             .git
-            .current_refs(&self.git.ref_set(self.settings.refs)?)?;
+            .current_refs(&self.git.ref_set(&self.settings.refs)?)?;
         let listed: Vec<ListedBundle> = bundles
             .into_iter()
             .map(|bundle| ListedBundle {
@@ -116,7 +116,7 @@ impl<'a> Runner<'a> {
     /// bundle couldn't be read.
     fn create_bundle(&self, output: &Output, warnings: &mut Vec<Warning>) -> Result<BundleOutcome> {
         let settings = self.settings;
-        let refs = self.git.ref_set(settings.refs)?;
+        let refs = self.git.ref_set(&settings.refs)?;
         let path = create::bundle_path(self.git, output, &settings.repo_name, &refs)?;
         match self.compare_with_previous(output, &refs)? {
             Some((existing, RefMatch::Current)) => return Ok(BundleOutcome::UpToDate(existing)),

@@ -13,7 +13,8 @@ output = "bundles"
 name = "{timestamp}-{hash}-{repo}.bundle"
 
 # Which refs to bundle. One of "all", "branches", or "head". "all" also takes remote-tracking
-# branches, so every fetch makes the last bundle out of date.
+# branches, so every fetch makes the last bundle out of date. A list such as
+# ["main", "v1.0"] bundles exactly those refs, plus HEAD.
 refs = "branches"
 
 # After creating a bundle, keep only the newest N bundles of this repo. Omit to never prune.
