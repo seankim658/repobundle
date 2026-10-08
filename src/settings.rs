@@ -16,7 +16,7 @@ const BUNDLE_EXTENSION: &str = "bundle";
 /// Every option after layering flags over config files over built-in defaults.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    pub output: Output,
+    pub action: Action,
     pub refs: RefSelection,
     pub repo_name: RepoName,
     pub max_size_mb: Option<NonZeroU64>,
@@ -27,28 +27,32 @@ pub struct Settings {
     pub json: bool,
 }
 
-/// Where bundles live. Only a directory holds more than one bundle, so only a directory can be
+/// What a run does. Only a directory holds more than one bundle, so only a directory can be
 /// pruned.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    /// Create a bundle and keep every older one.
+    Create(Output),
+    /// Create a bundle in `dir`, then keep only the newest ones there, counting the new one.
+    CreateAndPrune { dir: BundleDir, limit: PruneLimit },
+    /// Keep only the newest `keep` bundles in `dir` without creating one.
+    PruneOnly { dir: BundleDir, keep: NonZeroUsize },
+}
+
+/// Where bundles live.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Output {
-    /// Write a new bundle into `dir`, unless `prune` says to only prune.
-    Directory { dir: BundleDir, prune: Prune },
-    /// Write to exactly this path.
+    /// Name each bundle from the directory's template.
+    Directory(BundleDir),
+    /// Use exactly this path, so each new bundle replaces the last.
     File(PathBuf),
 }
 
-/// What happens to older bundles in a directory output.
+/// How many bundles a prune after creating keeps, and what asked for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Prune {
-    /// Create a bundle and keep every older one.
-    Never,
-    /// Create a bundle, then keep only the newest `keep`, counting the new one.
-    AfterCreate {
-        keep: NonZeroUsize,
-        origin: PruneOrigin,
-    },
-    /// Keep only the newest N without creating a bundle.
-    Only(NonZeroUsize),
+pub struct PruneLimit {
+    pub keep: NonZeroUsize,
+    pub origin: PruneOrigin,
 }
 
 /// What asked for a prune after creating. A run with no terminal skips a prune that only
@@ -85,7 +89,7 @@ impl Settings {
         } = config;
         let path = output_path(args.output.as_deref(), output, locations);
         Ok(Self {
-            output: resolve_output(args, path, DirectoryDefaults { name, prune })?,
+            action: resolve_action(args, path, DirectoryDefaults { name, prune })?,
             refs: args.refs.or(refs).unwrap_or_default(),
             repo_name: resolve_repo_name(repo_name, locations.repo_root)?,
             max_size_mb,
@@ -117,20 +121,36 @@ fn without_dot_components(path: &Path) -> PathBuf {
 /// Treat a path ending in `.bundle` as the exact file to write, and anything else as a
 /// directory. A file output drops the config's `name` and `prune`, since there is no directory
 /// to name bundles in or prune.
-fn resolve_output(args: &BundleArgs, path: PathBuf, defaults: DirectoryDefaults) -> Result<Output> {
+fn resolve_action(args: &BundleArgs, path: PathBuf, defaults: DirectoryDefaults) -> Result<Action> {
     if path.extension() == Some(OsStr::new(BUNDLE_EXTENSION)) {
         reject_directory_only_flags(args, &path)?;
-        return Ok(Output::File(path));
+        return Ok(Action::Create(Output::File(path)));
     }
     let name = args
         .name
         .clone()
         .or(defaults.name)
         .unwrap_or_else(default_template);
-    Ok(Output::Directory {
-        dir: BundleDir { path, name },
-        prune: resolve_prune(args, defaults.prune),
-    })
+    Ok(directory_action(
+        args,
+        BundleDir { path, name },
+        defaults.prune,
+    ))
+}
+
+fn directory_action(
+    args: &BundleArgs,
+    dir: BundleDir,
+    config_prune: Option<NonZeroUsize>,
+) -> Action {
+    if let Some(count) = args.prune_only {
+        let keep = count_or_config(count, config_prune);
+        return Action::PruneOnly { dir, keep };
+    }
+    match prune_limit(args, config_prune) {
+        Some(limit) => Action::CreateAndPrune { dir, limit },
+        None => Action::Create(Output::Directory(dir)),
+    }
 }
 
 fn reject_directory_only_flags(args: &BundleArgs, file: &Path) -> Result<()> {
@@ -149,17 +169,14 @@ fn reject_directory_only_flags(args: &BundleArgs, file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn resolve_prune(args: &BundleArgs, config_prune: Option<NonZeroUsize>) -> Prune {
-    if let Some(count) = args.prune_only {
-        return Prune::Only(count_or_config(count, config_prune));
-    }
+fn prune_limit(args: &BundleArgs, config_prune: Option<NonZeroUsize>) -> Option<PruneLimit> {
     match args.prune {
-        Some(count) => Prune::AfterCreate {
+        Some(count) => Some(PruneLimit {
             keep: count_or_config(count, config_prune),
             origin: PruneOrigin::Flag,
-        },
-        None if args.no_prune => Prune::Never,
-        None => config_prune.map_or(Prune::Never, |keep| Prune::AfterCreate {
+        }),
+        None if args.no_prune => None,
+        None => config_prune.map(|keep| PruneLimit {
             keep,
             origin: PruneOrigin::Config,
         }),
@@ -226,38 +243,46 @@ mod tests {
         NonZeroUsize::new(value).unwrap()
     }
 
-    fn after_create(keep: usize, origin: PruneOrigin) -> Prune {
-        Prune::AfterCreate {
-            keep: count(keep),
-            origin,
-        }
-    }
-
     fn repo_name(name: &str) -> RepoName {
         RepoName::try_from(name.to_string()).unwrap()
     }
 
-    fn default_directory(name: NameTemplate) -> Output {
-        Output::Directory {
-            dir: BundleDir {
-                path: Path::new(REPO_ROOT).join("bundles"),
-                name,
+    fn default_dir(name: NameTemplate) -> BundleDir {
+        BundleDir {
+            path: Path::new(REPO_ROOT).join("bundles"),
+            name,
+        }
+    }
+
+    fn create_in_default_dir(name: NameTemplate) -> Action {
+        Action::Create(Output::Directory(default_dir(name)))
+    }
+
+    fn create_and_prune(keep: usize, origin: PruneOrigin) -> Action {
+        Action::CreateAndPrune {
+            dir: default_dir(default_template()),
+            limit: PruneLimit {
+                keep: count(keep),
+                origin,
             },
-            prune: Prune::Never,
+        }
+    }
+
+    fn prune_only(keep: usize) -> Action {
+        Action::PruneOnly {
+            dir: default_dir(default_template()),
+            keep: count(keep),
         }
     }
 
     fn output_dir(settings: &Settings) -> &Path {
-        match &settings.output {
-            Output::Directory { dir, .. } => &dir.path,
-            Output::File(path) => panic!("expected a directory, got file {}", path.display()),
-        }
-    }
-
-    fn prune_of(settings: &Settings) -> Prune {
-        match &settings.output {
-            Output::Directory { prune, .. } => *prune,
-            Output::File(path) => panic!("expected a directory, got file {}", path.display()),
+        match &settings.action {
+            Action::Create(Output::Directory(dir))
+            | Action::CreateAndPrune { dir, .. }
+            | Action::PruneOnly { dir, .. } => &dir.path,
+            Action::Create(Output::File(path)) => {
+                panic!("expected a directory, got file {}", path.display())
+            }
         }
     }
 
@@ -266,7 +291,7 @@ mod tests {
     #[test]
     fn uses_built_in_defaults_without_flags_or_config() {
         let expected = Settings {
-            output: default_directory(default_template()),
+            action: create_in_default_dir(default_template()),
             refs: RefSelection::Branches,
             repo_name: repo_name("work"),
             max_size_mb: None,
@@ -303,8 +328,8 @@ mod tests {
         let settings = resolve_ok(&["--refs", "head", "--name", "{repo}.bundle"], config);
         assert_eq!(settings.refs, RefSelection::Head);
         assert_eq!(
-            settings.output,
-            default_directory("{repo}.bundle".parse().unwrap())
+            settings.action,
+            create_in_default_dir("{repo}.bundle".parse().unwrap())
         );
     }
 
@@ -353,8 +378,8 @@ mod tests {
     fn bundle_path_output_is_a_file() {
         let settings = resolve_ok(&["-o", "snapshot.bundle"], Defaults::default());
         assert_eq!(
-            settings.output,
-            Output::File(Path::new(CWD).join("snapshot.bundle"))
+            settings.action,
+            Action::Create(Output::File(Path::new(CWD).join("snapshot.bundle")))
         );
     }
 
@@ -384,8 +409,8 @@ mod tests {
         };
         let settings = resolve_ok(&["-o", "x.bundle"], config);
         assert_eq!(
-            settings.output,
-            Output::File(Path::new(CWD).join("x.bundle"))
+            settings.action,
+            Action::Create(Output::File(Path::new(CWD).join("x.bundle")))
         );
     }
 
@@ -393,33 +418,39 @@ mod tests {
 
     #[test]
     fn resolves_prune_from_flags_and_config() {
-        let cases: &[(&[&str], Option<NonZeroUsize>, Prune)] = &[
-            (&[], None, Prune::Never),
-            (&[], Some(count(3)), after_create(3, PruneOrigin::Config)),
-            (&["--no-prune"], Some(count(3)), Prune::Never),
-            (&["--prune"], None, after_create(1, PruneOrigin::Flag)),
+        let create = create_in_default_dir(default_template());
+        let cases: &[(&[&str], Option<NonZeroUsize>, Action)] = &[
+            (&[], None, create.clone()),
+            (
+                &[],
+                Some(count(3)),
+                create_and_prune(3, PruneOrigin::Config),
+            ),
+            (&["--no-prune"], Some(count(3)), create),
+            (&["--prune"], None, create_and_prune(1, PruneOrigin::Flag)),
             (
                 &["--prune"],
                 Some(count(3)),
-                after_create(3, PruneOrigin::Flag),
+                create_and_prune(3, PruneOrigin::Flag),
             ),
             (
                 &["--prune=2"],
                 Some(count(3)),
-                after_create(2, PruneOrigin::Flag),
+                create_and_prune(2, PruneOrigin::Flag),
             ),
-            (&["--prune-only"], None, Prune::Only(count(1))),
-            (&["--prune-only"], Some(count(3)), Prune::Only(count(3))),
-            (&["--prune-only=2"], Some(count(3)), Prune::Only(count(2))),
+            (&["--prune-only"], None, prune_only(1)),
+            (&["--prune-only"], Some(count(3)), prune_only(3)),
+            (&["--prune-only=2"], Some(count(3)), prune_only(2)),
         ];
-        for &(flags, config_prune, expected) in cases {
+        for (flags, config_prune, expected) in cases {
+            let (flags, config_prune) = (*flags, *config_prune);
             let config = Defaults {
                 prune: config_prune,
                 ..Defaults::default()
             };
-            let prune = prune_of(&resolve_ok(flags, config));
+            let action = resolve_ok(flags, config).action;
             assert_eq!(
-                prune, expected,
+                &action, expected,
                 "{flags:?} with config prune {config_prune:?}"
             );
         }

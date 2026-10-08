@@ -150,7 +150,7 @@ pub fn unignored_output(git: &Git, output: &Output) -> Result<Option<Warning>> {
 /// Resolve both paths first, so `..` and symlinks can't make an outside path look inside.
 fn output_in_repo(output: &Output, repo_root: &Path) -> Result<Option<PathBuf>> {
     let target = match output {
-        Output::Directory { dir, .. } => &dir.path,
+        Output::Directory(dir) => &dir.path,
         Output::File(path) => path,
     };
     if !target.exists() {
@@ -203,18 +203,14 @@ mod tests {
     use super::*;
     use crate::bundles::BundleDir;
     use crate::naming::DEFAULT_TEMPLATE;
-    use crate::settings::Prune;
     use crate::test_support::test_repo;
     use tempfile::TempDir;
 
     fn directory_output(path: PathBuf) -> Output {
-        Output::Directory {
-            dir: BundleDir {
-                path,
-                name: DEFAULT_TEMPLATE.parse().unwrap(),
-            },
-            prune: Prune::Never,
-        }
+        Output::Directory(BundleDir {
+            path,
+            name: DEFAULT_TEMPLATE.parse().unwrap(),
+        })
     }
 
     fn default_output(repo: &Path) -> Output {

@@ -11,7 +11,7 @@ use crate::output;
 use crate::prompt;
 use crate::prune;
 use crate::report::{BundleOutcome, Reporter};
-use crate::settings::{Output, Prune, PruneOrigin, Settings};
+use crate::settings::{Action, Output, PruneLimit, PruneOrigin, Settings};
 use crate::warnings::{self, PromptUnavailable, Warning};
 
 /// Carries out one run against a repo, sending each result to a reporter.
@@ -30,50 +30,47 @@ impl<'a> Runner<'a> {
         }
     }
 
-    /// Create a bundle and prune after it, or only prune, as the settings say.
+    /// Do what the settings' action says.
     pub fn run(&mut self) -> Result<()> {
         let settings = self.settings;
-        match &settings.output {
-            Output::Directory {
-                dir,
-                prune: Prune::Only(keep),
-            } => self.prune_only(dir, *keep),
-            _ => self.create_and_prune(),
+        match &settings.action {
+            Action::Create(output) => self.create(output).map(drop),
+            Action::CreateAndPrune { dir, limit } => self.create_and_prune(dir, *limit),
+            Action::PruneOnly { dir, keep } => self.prune_only(dir, *keep),
         }
     }
 
     /// Check the repo before creating, so the warnings describe the state that was bundled.
-    fn create_and_prune(&mut self) -> Result<()> {
-        let settings = self.settings;
-        let mut warnings = self.repo_warnings()?;
-        let outcome = self.create_bundle(&mut warnings)?;
+    /// Return the bundle this run points to.
+    fn create(&mut self, output: &Output) -> Result<PathBuf> {
+        let mut warnings = self.repo_warnings(output)?;
+        let outcome = self.create_bundle(output, &mut warnings)?;
         self.reporter.bundle(&outcome);
-        warnings.extend(self.bundle_warnings(outcome.path())?);
+        warnings.extend(self.bundle_warnings(output, outcome.path())?);
         self.reporter.warnings(&warnings);
-        let Output::Directory {
-            dir,
-            prune: Prune::AfterCreate { keep, origin },
-        } = &settings.output
-        else {
-            return Ok(());
-        };
-        let found = dir.find(&settings.repo_name)?;
-        let excess = prune::select(found, *keep, Some(outcome.path()));
+        Ok(outcome.path().to_path_buf())
+    }
+
+    /// Prune with this run's bundle protected, so it always counts as one of those kept.
+    fn create_and_prune(&mut self, dir: &BundleDir, limit: PruneLimit) -> Result<()> {
+        let bundle = self.create(&Output::Directory(dir.clone()))?;
+        let found = dir.find(&self.settings.repo_name)?;
+        let excess = prune::select(found, limit.keep, Some(&bundle));
         if excess.is_empty() {
             self.reporter.nothing_over_limit();
             return Ok(());
         }
-        self.remove_excess(&excess, *origin)
+        self.remove_excess(&excess, limit.origin)
     }
 
-    fn repo_warnings(&self) -> Result<Vec<Warning>> {
+    fn repo_warnings(&self, output: &Output) -> Result<Vec<Warning>> {
         if !self.settings.warnings {
             return Ok(Vec::new());
         }
-        warnings::repo_warnings(self.git, &self.settings.output)
+        warnings::repo_warnings(self.git, output)
     }
 
-    fn bundle_warnings(&self, bundle: &Path) -> Result<Vec<Warning>> {
+    fn bundle_warnings(&self, output: &Output, bundle: &Path) -> Result<Vec<Warning>> {
         if !self.settings.warnings {
             return Ok(Vec::new());
         }
@@ -81,17 +78,17 @@ impl<'a> Runner<'a> {
         if let Some(limit_mb) = self.settings.max_size_mb {
             found.extend(warnings::size_warning(bundle, limit_mb)?);
         }
-        found.extend(warnings::unignored_output(self.git, &self.settings.output)?);
+        found.extend(warnings::unignored_output(self.git, output)?);
         Ok(found)
     }
 
     /// Return what happened to the bundle this run points to. Add a warning when the previous
     /// bundle couldn't be read.
-    fn create_bundle(&self, warnings: &mut Vec<Warning>) -> Result<BundleOutcome> {
+    fn create_bundle(&self, output: &Output, warnings: &mut Vec<Warning>) -> Result<BundleOutcome> {
         let settings = self.settings;
         let refs = self.git.ref_set(settings.refs)?;
-        let path = create::bundle_path(self.git, &settings.output, &settings.repo_name, &refs)?;
-        match self.compare_with_previous(&refs)? {
+        let path = create::bundle_path(self.git, output, &settings.repo_name, &refs)?;
+        match self.compare_with_previous(output, &refs)? {
             Some((existing, RefMatch::Current)) => return Ok(BundleOutcome::UpToDate(existing)),
             Some((previous, RefMatch::Unreadable)) if settings.warnings => {
                 warnings.push(Warning::UnreadableBundle(previous));
@@ -106,12 +103,15 @@ impl<'a> Runner<'a> {
     }
 
     /// Compare the previous bundle with the current refs, unless `--force` skips the check.
-    fn compare_with_previous(&self, refs: &RefSet) -> Result<Option<(PathBuf, RefMatch)>> {
-        let settings = self.settings;
-        if settings.force {
+    fn compare_with_previous(
+        &self,
+        output: &Output,
+        refs: &RefSet,
+    ) -> Result<Option<(PathBuf, RefMatch)>> {
+        if self.settings.force {
             return Ok(None);
         }
-        let Some(previous) = create::previous_bundle(&settings.output, &settings.repo_name)? else {
+        let Some(previous) = create::previous_bundle(output, &self.settings.repo_name)? else {
             return Ok(None);
         };
         let ref_match = create::compare_refs(self.git, &previous, refs)?;

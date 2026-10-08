@@ -21,7 +21,7 @@ pub fn bundle_path(git: &Git, output: &Output, repo: &RepoName, refs: &RefSet) -
     git.ensure_not_shallow()?;
     let dir = match output {
         Output::File(path) => return Ok(path.clone()),
-        Output::Directory { dir, .. } => dir,
+        Output::Directory(dir) => dir,
     };
     let hash = git.short_hash()?;
     let values = NameValues {
@@ -55,7 +55,7 @@ pub fn write_bundle(git: &Git, path: &Path, refs: &RefSet) -> Result<u64> {
 pub fn previous_bundle(output: &Output, repo: &RepoName) -> Result<Option<PathBuf>> {
     match output {
         Output::File(path) => Ok(path.is_file().then(|| path.clone())),
-        Output::Directory { dir, .. } => {
+        Output::Directory(dir) => {
             let newest = dir.find(repo)?.into_iter().next();
             Ok(newest.map(|bundle| bundle.path))
         }
@@ -143,7 +143,6 @@ mod tests {
     use crate::bundles::BundleDir;
     use crate::git::RefSelection;
     use crate::naming::DEFAULT_TEMPLATE;
-    use crate::settings::Prune;
     use crate::test_support::{empty_repo, run_with_identity, test_repo};
     use chrono::TimeZone;
     use tempfile::TempDir;
@@ -167,10 +166,7 @@ mod tests {
     }
 
     fn directory(path: PathBuf, name: NameTemplate) -> Output {
-        Output::Directory {
-            dir: BundleDir { path, name },
-            prune: Prune::Never,
-        }
+        Output::Directory(BundleDir { path, name })
     }
 
     // Bundle path
