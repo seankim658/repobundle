@@ -178,7 +178,7 @@ prune = 3
 - It has no effect when `output` names a single file.
 - `--no-prune` turns it off for one run.
 - A bare `--prune` or `--prune-only` on the command line uses this count instead of 1.
-- Deleting asks for confirmation unless you pass `--force`. See [Pruning](./pruning.md).
+- Deleting asks for confirmation unless you pass `--yes`. Without a terminal to ask, the prune is skipped with a warning. See [Pruning](./pruning.md#scripts-and-scheduled-runs).
 
 Only files whose names match the current `name` template for this repo are ever considered. If you change the template, bundles with the old naming are left alone.
 

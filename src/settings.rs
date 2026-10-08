@@ -22,6 +22,7 @@ pub struct Settings {
     pub max_size_mb: Option<NonZeroU64>,
     pub dry_run: bool,
     pub force: bool,
+    pub yes: bool,
     pub warnings: bool,
 }
 
@@ -40,10 +41,21 @@ pub enum Output {
 pub enum Prune {
     /// Create a bundle and keep every older one.
     Never,
-    /// Create a bundle, then keep only the newest N, counting the new one.
-    AfterCreate(NonZeroUsize),
+    /// Create a bundle, then keep only the newest `keep`, counting the new one.
+    AfterCreate {
+        keep: NonZeroUsize,
+        origin: PruneOrigin,
+    },
     /// Keep only the newest N without creating a bundle.
     Only(NonZeroUsize),
+}
+
+/// What asked for a prune after creating. A run with no terminal skips a prune that only
+/// config asked for, but refuses one asked for on the command line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PruneOrigin {
+    Flag,
+    Config,
 }
 
 /// The directories that relative output paths resolve against.
@@ -78,6 +90,7 @@ impl Settings {
             max_size_mb,
             dry_run: args.dry_run,
             force: args.force,
+            yes: args.yes,
             warnings: !args.no_warnings,
         })
     }
@@ -139,9 +152,15 @@ fn resolve_prune(args: &BundleArgs, config_prune: Option<NonZeroUsize>) -> Prune
         return Prune::Only(count_or_config(count, config_prune));
     }
     match args.prune {
-        Some(count) => Prune::AfterCreate(count_or_config(count, config_prune)),
+        Some(count) => Prune::AfterCreate {
+            keep: count_or_config(count, config_prune),
+            origin: PruneOrigin::Flag,
+        },
         None if args.no_prune => Prune::Never,
-        None => config_prune.map_or(Prune::Never, Prune::AfterCreate),
+        None => config_prune.map_or(Prune::Never, |keep| Prune::AfterCreate {
+            keep,
+            origin: PruneOrigin::Config,
+        }),
     }
 }
 
@@ -205,6 +224,13 @@ mod tests {
         NonZeroUsize::new(value).unwrap()
     }
 
+    fn after_create(keep: usize, origin: PruneOrigin) -> Prune {
+        Prune::AfterCreate {
+            keep: count(keep),
+            origin,
+        }
+    }
+
     fn repo_name(name: &str) -> RepoName {
         RepoName::try_from(name.to_string()).unwrap()
     }
@@ -244,6 +270,7 @@ mod tests {
             max_size_mb: None,
             dry_run: false,
             force: false,
+            yes: false,
             warnings: true,
         };
         assert_eq!(resolve_ok(&[], Defaults::default()), expected);
@@ -353,7 +380,10 @@ mod tests {
             ..Defaults::default()
         };
         let settings = resolve_ok(&["-o", "x.bundle"], config);
-        assert_eq!(settings.output, Output::File(Path::new(CWD).join("x.bundle")));
+        assert_eq!(
+            settings.output,
+            Output::File(Path::new(CWD).join("x.bundle"))
+        );
     }
 
     // Pruning
@@ -362,11 +392,19 @@ mod tests {
     fn resolves_prune_from_flags_and_config() {
         let cases: &[(&[&str], Option<NonZeroUsize>, Prune)] = &[
             (&[], None, Prune::Never),
-            (&[], Some(count(3)), Prune::AfterCreate(count(3))),
+            (&[], Some(count(3)), after_create(3, PruneOrigin::Config)),
             (&["--no-prune"], Some(count(3)), Prune::Never),
-            (&["--prune"], None, Prune::AfterCreate(count(1))),
-            (&["--prune"], Some(count(3)), Prune::AfterCreate(count(3))),
-            (&["--prune=2"], Some(count(3)), Prune::AfterCreate(count(2))),
+            (&["--prune"], None, after_create(1, PruneOrigin::Flag)),
+            (
+                &["--prune"],
+                Some(count(3)),
+                after_create(3, PruneOrigin::Flag),
+            ),
+            (
+                &["--prune=2"],
+                Some(count(3)),
+                after_create(2, PruneOrigin::Flag),
+            ),
             (&["--prune-only"], None, Prune::Only(count(1))),
             (&["--prune-only"], Some(count(3)), Prune::Only(count(3))),
             (&["--prune-only=2"], Some(count(3)), Prune::Only(count(2))),

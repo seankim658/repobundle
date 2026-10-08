@@ -59,12 +59,36 @@ fn dry_run_with_few_bundles_has_nothing_to_prune() {
 }
 
 #[test]
-fn prune_without_terminal_or_force_refuses_and_keeps_everything() {
+fn prune_flag_without_terminal_or_yes_refuses_and_keeps_everything() {
     let fixture = Fixture::with_commit();
     create_bundles(&fixture, 3);
-    let stderr = fixture.fail(&["--prune-only"]);
+    for flag in ["--prune-only", "--prune"] {
+        let stderr = fixture.fail(&[flag]);
+        assert!(stderr.contains("--yes"), "{flag}: {stderr}");
+    }
+    assert_eq!(fixture.default_bundles().len(), 3);
+}
 
-    assert!(stderr.contains("--force"), "{stderr}");
+#[test]
+fn config_prune_without_terminal_warns_and_keeps_everything() {
+    let fixture = Fixture::with_commit();
+    create_bundles(&fixture, 2);
+    fixture.write_file(".repobundle.toml", "[defaults]\nprune = 1\n");
+    fixture.commit("unbundled");
+    let stderr = fixture.succeed_with_stderr(&[]);
+
+    assert!(stderr.contains("nothing was deleted"), "{stderr}");
+    assert!(stderr.contains("--yes"), "{stderr}");
+    assert_eq!(fixture.default_bundles().len(), 3);
+}
+
+#[test]
+fn force_does_not_approve_deletion() {
+    let fixture = Fixture::with_commit();
+    create_bundles(&fixture, 2);
+    let stderr = fixture.fail(&["--prune", "--force"]);
+
+    assert!(stderr.contains("--yes"), "{stderr}");
     assert_eq!(fixture.default_bundles().len(), 3);
 }
 
@@ -87,10 +111,10 @@ fn prune_after_create_with_nothing_to_delete_stays_quiet() {
 }
 
 #[test]
-fn prune_only_with_force_keeps_only_the_newest() {
+fn prune_only_with_yes_keeps_only_the_newest() {
     let fixture = Fixture::with_commit();
     let names = create_bundles(&fixture, 3);
-    fixture.succeed(&["--prune-only", "--force"]);
+    fixture.succeed(&["--prune-only", "--yes"]);
 
     let remaining: Vec<String> = fixture
         .default_bundles()
@@ -105,7 +129,7 @@ fn prune_after_create_keeps_the_new_bundle() {
     let fixture = Fixture::with_commit();
     let names = create_bundles(&fixture, 2);
     fixture.commit("unbundled");
-    let stdout = fixture.succeed(&["--prune=2", "--force"]);
+    let stdout = fixture.succeed(&["--prune=2", "--yes"]);
 
     let mut remaining: Vec<String> = fixture
         .default_bundles()

@@ -21,7 +21,8 @@ Options:
       --prune-only[=<N>]  Keep only the newest N bundles of this repo without creating one
       --no-prune          Ignore the `prune` value from config files
       --dry-run           Report what would be created and deleted without doing either
-      --force             Create even if an identical bundle exists, and delete without asking
+      --force             Create even if an identical bundle exists
+  -y, --yes               Delete bundles over the prune limit without asking
       --no-warnings       Suppress all warnings
       --verbose           Log every git command and its exit status
   -h, --help              Print help
@@ -36,9 +37,9 @@ Options:
 
 **File outputs.** With `-o` ending in `.bundle`, `--name`, `--prune`, and `--prune-only` are errors, and `name` and `prune` from config files are ignored. See [Writing a Single File](./general_usage.md#writing-a-single-file).
 
-**`--force` does two things.** It creates a new bundle even when nothing has changed, and it deletes without asking when pruning. To prune without a prompt but keep the up-to-date check, see [Scripts and Scheduled Runs](./pruning.md#scripts-and-scheduled-runs).
+**`--force` and `--yes` are separate.** `--force` creates a new bundle even when nothing has changed. `--yes` deletes bundles over the prune limit without asking. `--force` can't be combined with `--prune-only`, which creates nothing. See [Scripts and Scheduled Runs](./pruning.md#scripts-and-scheduled-runs) for pruning without a terminal.
 
-**`--dry-run` wins.** With `--dry-run`, nothing is written or deleted, even alongside `--force`.
+**`--dry-run` wins.** With `--dry-run`, nothing is written or deleted, even alongside `--force` or `--yes`.
 
 **Defaults.** `-o`, `--name`, `--refs`, and the prune count can also be set in a [config file](./config_file.md), along with `max_size_mb` and `repo_name`, which have no flag. Command-line flags always win.
 

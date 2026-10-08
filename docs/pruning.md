@@ -122,11 +122,11 @@ When there's nothing over the limit, there's nothing to ask. `--prune-only` repo
 [i] Nothing to prune
 ```
 
-Pass `--force` to delete without asking.
+Pass `--yes` (or `-y`) to delete without asking.
 
 ### Previewing With `--dry-run`
 
-`--dry-run` lists what would be deleted and deletes nothing, even with `--force`.
+`--dry-run` lists what would be deleted and deletes nothing, even with `--yes`.
 
 ```bash
 repobundle --prune=2 --dry-run
@@ -142,28 +142,31 @@ The bundle the run would create counts toward the limit even though it isn't wri
 
 ### Scripts and Scheduled Runs
 
-Without a terminal to answer the prompt, such as in a script, a cron job, or with input piped in, repobundle refuses to delete rather than guessing.
+Without a terminal to answer the prompt, such as in a script, a cron job, or with input piped in, repobundle never deletes unless you pass `--yes`. What happens instead depends on what asked for the prune.
+
+**A prune flag on the command line fails.** With `--prune` or `--prune-only` and no terminal, the run deletes nothing and exits with an error, so a script can't think it pruned when it didn't.
 
 ```
-[!] Pruning would delete 2 bundles, but there is no terminal to confirm; pass --force to delete without asking
+[!] Pruning would delete 2 bundles, but there is no terminal to confirm; pass --yes to delete without asking
 ```
 
-Nothing is deleted and the run exits with an error. If there's nothing to delete, there's nothing to confirm, and the run succeeds.
+**A prune from a config file is skipped.** With only `prune` in a config file, the bundle is created as usual, the prune is skipped with a warning, and the run succeeds.
 
-**With `prune` in a config file, this applies to every run.** The bundle is created first, then the prune is refused, so an unattended run makes its bundle but still exits with an error. In scripts, pass `--force` to prune without asking, or `--no-prune` to skip pruning.
+```
+[✓] Created bundles/20261007T150211Z-c71d9e4-myrepo.bundle (149.0 kB)
+[!] Pruning would delete 2 bundles, but there is no terminal to confirm, so nothing was deleted; pass --yes to delete without asking
+```
+
+If there's nothing to delete, there's nothing to confirm, and either way the run succeeds quietly.
+
+To prune unattended, pass `--yes`. It keeps the [up-to-date check](./general_usage.md#when-nothing-has-changed), so a run with no new commits reuses the last bundle and makes no new one.
 
 ```bash
-# Bundle and prune with no prompt
-repobundle --force
+# Bundle and prune to the configured count with no prompt
+repobundle --yes
 
 # Bundle only, ignoring the configured prune
 repobundle --no-prune
-```
-
-Note that `--force` also skips the [up-to-date check](./general_usage.md#when-nothing-has-changed), so `repobundle --force` makes a new bundle every time. To keep the check and still prune without asking, run the two steps separately.
-
-```bash
-repobundle --no-prune && repobundle --prune-only --force
 ```
 
 ## See Also

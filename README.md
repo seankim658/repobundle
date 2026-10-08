@@ -97,7 +97,8 @@ Options:
       --prune-only[=<N>]  Keep only the newest N bundles of this repo without creating one
       --no-prune          Ignore the `prune` value from config files
       --dry-run           Report what would be created and deleted without doing either
-      --force             Create even if an identical bundle exists, and delete without asking
+      --force             Create even if an identical bundle exists
+  -y, --yes               Delete bundles over the prune limit without asking
       --no-warnings       Suppress all warnings
       --verbose           Log every git command and its exit status
   -h, --help              Print help

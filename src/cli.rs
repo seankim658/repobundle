@@ -64,9 +64,13 @@ pub struct BundleArgs {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Create even if an identical bundle exists, and delete without asking.
-    #[arg(long)]
+    /// Create even if an identical bundle exists.
+    #[arg(long, conflicts_with = "prune_only")]
     pub force: bool,
+
+    /// Delete bundles over the prune limit without asking.
+    #[arg(short, long)]
+    pub yes: bool,
 
     /// Suppress all warnings.
     #[arg(long)]
@@ -142,6 +146,19 @@ mod tests {
         ] {
             assert_eq!(parse_error(&args), ErrorKind::ArgumentConflict, "{args:?}");
         }
+    }
+
+    #[test]
+    fn rejects_force_with_prune_only() {
+        assert_eq!(
+            parse_error(&["--prune-only", "--force"]),
+            ErrorKind::ArgumentConflict
+        );
+    }
+
+    #[test]
+    fn yes_has_a_short_form() {
+        assert!(parse(&["-y"]).yes);
     }
 
     #[test]

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::git::Git;
+use crate::output::count_bundles;
 use crate::settings::Output;
 use crate::size::{BYTES_PER_MB, format_size};
 
@@ -28,6 +29,9 @@ pub enum Warning {
     },
     /// Holds the output's path relative to the repo root.
     UnignoredOutput(PathBuf),
+    /// Holds how many bundles a config-only prune would have deleted, had a terminal been
+    /// there to confirm.
+    PruneSkipped(usize),
 }
 
 impl fmt::Display for Warning {
@@ -48,6 +52,11 @@ impl fmt::Display for Warning {
                 formatter,
                 "the output {} is inside the repo but not ignored, so git lists it as untracked; add it to .gitignore or .git/info/exclude",
                 path.display()
+            ),
+            Self::PruneSkipped(count) => write!(
+                formatter,
+                "pruning would delete {}, but there is no terminal to confirm, so nothing was deleted; pass --yes to delete without asking",
+                count_bundles(*count)
             ),
         }
     }
@@ -346,6 +355,13 @@ mod tests {
         let message = warning.to_string();
         assert!(message.contains("42.3 MB"), "{message}");
         assert!(message.contains("30 MB"), "{message}");
+    }
+
+    #[test]
+    fn skipped_prune_message_counts_bundles_and_names_yes() {
+        let message = Warning::PruneSkipped(2).to_string();
+        assert!(message.contains("2 bundles"), "{message}");
+        assert!(message.contains("--yes"), "{message}");
     }
 
     #[test]

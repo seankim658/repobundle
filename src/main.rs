@@ -18,7 +18,7 @@ use repobundle::logging;
 use repobundle::output;
 use repobundle::prompt;
 use repobundle::prune;
-use repobundle::settings::{Locations, Output, Prune, Settings};
+use repobundle::settings::{Locations, Output, Prune, PruneOrigin, Settings};
 use repobundle::warnings::{self, Warning};
 
 fn main() -> ExitCode {
@@ -65,13 +65,14 @@ fn create_and_prune(git: &Git, settings: &Settings) -> Result<()> {
     output::warnings(&warnings);
     let Output::Directory {
         dir,
-        prune: Prune::AfterCreate(keep),
+        prune: Prune::AfterCreate { keep, origin },
     } = &settings.output
     else {
         return Ok(());
     };
     let found = dir.find(&settings.repo_name)?;
-    remove_excess(settings, &prune::select(found, *keep, Some(&bundle)))
+    let excess = prune::select(found, *keep, Some(&bundle));
+    remove_excess(settings, &excess, *origin)
 }
 
 fn repo_warnings(git: &Git, settings: &Settings) -> Result<Vec<Warning>> {
@@ -142,11 +143,11 @@ fn prune_only(settings: &Settings, dir: &BundleDir, keep: NonZeroUsize) -> Resul
         output::nothing_to_prune();
         return Ok(());
     }
-    remove_excess(settings, &excess)
+    remove_excess(settings, &excess, PruneOrigin::Flag)
 }
 
 /// Stay silent when nothing is over the limit, so a routine create prints only its result.
-fn remove_excess(settings: &Settings, excess: &[BundleFile]) -> Result<()> {
+fn remove_excess(settings: &Settings, excess: &[BundleFile], origin: PruneOrigin) -> Result<()> {
     if excess.is_empty() {
         return Ok(());
     }
@@ -154,25 +155,36 @@ fn remove_excess(settings: &Settings, excess: &[BundleFile]) -> Result<()> {
         output::would_delete(excess);
         return Ok(());
     }
-    if !deletion_approved(settings, excess)? {
+    if settings.yes {
+        return delete_bundles(excess);
+    }
+    if !io::stdin().is_terminal() {
+        return prune_without_terminal(settings, excess.len(), origin);
+    }
+    if !confirm_deletion(excess)? {
         output::nothing_deleted();
         return Ok(());
     }
     delete_bundles(excess)
 }
 
-/// Approve with `--force`, or ask on a terminal. Refuse without a terminal, since nobody is
-/// there to answer.
-fn deletion_approved(settings: &Settings, excess: &[BundleFile]) -> Result<bool> {
-    if settings.force {
-        return Ok(true);
-    }
-    let count = output::count_bundles(excess.len());
-    if !io::stdin().is_terminal() {
+/// Skip a prune that only config asked for, so a scheduled run still succeeds. Refuse one asked
+/// for on the command line, since skipping it would hide that the flag did nothing.
+fn prune_without_terminal(settings: &Settings, count: usize, origin: PruneOrigin) -> Result<()> {
+    if origin == PruneOrigin::Flag {
         bail!(
-            "pruning would delete {count}, but there is no terminal to confirm; pass --force to delete without asking"
+            "pruning would delete {}, but there is no terminal to confirm; pass --yes to delete without asking",
+            output::count_bundles(count)
         );
     }
+    if settings.warnings {
+        output::warnings(&[Warning::PruneSkipped(count)]);
+    }
+    Ok(())
+}
+
+fn confirm_deletion(excess: &[BundleFile]) -> Result<bool> {
+    let count = output::count_bundles(excess.len());
     output::deletion_candidates(excess);
     prompt::confirm(
         &output::question(&format!("Delete {count}?")),
