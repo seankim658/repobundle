@@ -8,6 +8,8 @@ pub mod naming;
 pub mod output;
 pub mod prompt;
 pub mod prune;
+pub mod report;
+pub mod run;
 pub mod settings;
 pub mod size;
 pub mod warnings;
