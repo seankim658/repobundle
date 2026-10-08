@@ -5,6 +5,7 @@ Command line tool for packing a git repository's full history into a single [git
 A bundle is a normal git file format. Anyone with git can clone from it like a remote, so the history, branches, and tags all come along. repobundle handles the parts around `git bundle` that are easy to get wrong. It names each bundle so you can tell them apart, verifies every bundle before keeping it, skips the work when nothing has changed, prunes old bundles, and warns you when a bundle won't contain what you expect.
 
 - [Installation](#installation)
+  - [Downloading a Release](#downloading-a-release)
   - [Building From Source](#building-from-source)
 - [Usage](#usage)
   - [Quick Start](#quick-start)
@@ -18,6 +19,10 @@ A bundle is a normal git file format. Anyone with git can clone from it like a r
 ## Installation
 
 To use repobundle you'll need [git](https://git-scm.com/downloads) on your `PATH`, since every operation runs through the `git` binary. For more detailed steps, including setting up tab completions, see the [setup](./docs/setup.md) guide.
+
+### Downloading a Release
+
+Each [release](https://github.com/seankim658/repobundle/releases) has prebuilt binaries for Linux (x86_64) and macOS (Apple silicon), with checksums and the shell completion scripts. See the [setup](./docs/setup.md#downloading-a-release) guide for how to download and check one.
 
 ### Building From Source
 

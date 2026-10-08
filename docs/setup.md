@@ -4,6 +4,8 @@ This guide will help you install repobundle, set it up to run from anywhere, and
 
 - [Requirements](#requirements)
 - [Installation](#installation)
+  - [Downloading a Release](#downloading-a-release)
+  - [Building From Source](#building-from-source)
 - [Running the Tool](#running-the-tool)
 - [Setting up Shell Completions](#setting-up-shell-completions)
 - [Optional Config](#optional-config)
@@ -13,9 +15,35 @@ This guide will help you install repobundle, set it up to run from anywhere, and
 ## Requirements
 
 - [git](https://git-scm.com/downloads) on your `PATH`. repobundle runs every operation through the `git` binary and stops with an error if it can't find it.
-- [Rust](https://doc.rust-lang.org/book/ch01-01-installation.html) and Cargo (installed with Rust), to build from source.
+- [Rust](https://doc.rust-lang.org/book/ch01-01-installation.html) and Cargo (installed with Rust), only to build from source.
 
 ## Installation
+
+### Downloading a Release
+
+Each [release](https://github.com/seankim658/repobundle/releases) has a binary for Linux (x86_64) and one for macOS (Apple silicon), each with a `.sha256` checksum file. Download the binary for your system with its checksum, check it, and make it executable.
+
+```bash
+curl -LO https://github.com/seankim658/repobundle/releases/latest/download/repobundle-macOS-ARM
+curl -LO https://github.com/seankim658/repobundle/releases/latest/download/repobundle-macOS-ARM.sha256
+shasum -a 256 -c repobundle-macOS-ARM.sha256
+chmod +x repobundle-macOS-ARM
+mv repobundle-macOS-ARM repobundle
+```
+
+```
+repobundle-macOS-ARM: OK
+```
+
+On Linux, use `repobundle-Linux-x86_64` and `sha256sum -c` instead. Then put the binary somewhere on your `PATH` (see [Running the Tool](#running-the-tool)).
+
+If you downloaded the macOS binary with a browser instead of `curl`, macOS blocks it from running until you clear its quarantine flag.
+
+```bash
+xattr -d com.apple.quarantine repobundle
+```
+
+### Building From Source
 
 Clone the repository and build a release binary.
 
@@ -78,7 +106,7 @@ repobundle --version
 
 ## Setting up Shell Completions
 
-Ready-made completion scripts for Bash, Zsh, Fish, PowerShell, and Elvish are in the [`completions/`](../completions) directory of the repo. They match the flags of the version you checked out, so you can copy one into place in the locations below instead of generating it.
+Ready-made completion scripts for Bash, Zsh, Fish, PowerShell, and Elvish are in the [`completions/`](../completions) directory of the repo, and in `completions.tar.gz` on each [release](https://github.com/seankim658/repobundle/releases). They match the flags of the version you checked out, so you can copy one into place in the locations below instead of generating it.
 
 repobundle can also generate the scripts itself. The script is printed to stdout.
 
